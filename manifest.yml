@@ -1,0 +1,23 @@
+modules:
+  jira:fullPage:
+    - key: jira-planner-hello-world-full-page
+      resource: main
+      resolver:
+        function: resolver
+      title: jira-planner
+      routePrefix: hello-world
+  function:
+    - key: resolver
+      handler: index.handler
+resources:
+  - key: main
+    path: static/hello-world/build
+app:
+  runtime:
+    name: nodejs24.x
+    memoryMB: 256
+    architecture: arm64
+  id: ari:cloud:ecosystem::app/fa84de8d-c339-4d3c-9823-50ccb2c19426
+permissions:
+  scopes:
+    - read:jira-user

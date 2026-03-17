@@ -1,0 +1,17 @@
+{
+  "name": "jira-full-page-custom-ui",
+  "title": "Jira full page custom UI",
+  "description": "Template for Jira full page module for custom UI",
+  "link": "https://developer.atlassian.com/platform/forge/manifest-reference/modules/jira-full-page/",
+  "version": "1.2.1",
+  "main": "index.js",
+  "license": "MIT",
+  "private": true,
+  "devDependencies": {
+    "eslint": "^8.56.0",
+    "eslint-plugin-react-hooks": "^4.6.0"
+  },
+  "dependencies": {
+    "@forge/resolver": "1.7.1"
+  }
+}

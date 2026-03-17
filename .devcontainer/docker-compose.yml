@@ -11,6 +11,9 @@ services:
       - ~/.gitconfig:/root/.gitconfig:ro
       # Mount working folder
       - ../:/home/workspace
+    environment:
+      FORGE_EMAIL: ${FORGE_EMAIL}
+      FORGE_API_TOKEN: ${FORGE_API_TOKEN}
     # The following commands ensure that the container stays active
     entrypoint: bash
     stdin_open: true
