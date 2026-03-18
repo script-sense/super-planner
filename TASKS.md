@@ -84,32 +84,49 @@ Work through these tasks in order. Find the first unchecked task and implement i
   - Give each priority row (and its cards) a distinct colour: Highest = red, High = orange, Medium = yellow, Low = blue, Lowest = grey
   - Goal: priority is immediately readable at a glance
 
-- [ ] **Step 14 — Sprint dates in column headers**
-  - Extend the `getSprints` resolver to also return `startDate` and `endDate` for each sprint
-  - Update column headers to show the sprint name on one line and the date range beneath it (e.g. "Mar 3 – Mar 14") in a smaller, lighter font
-  - Format dates as short locale strings (day + month, no year unless the year differs from today)
-  - The Backlog column has no dates — leave its header as-is
-  - Goal: columns read like a calendar so sprint boundaries are immediately visible
+- [x] **Step 14 — Calendar-style column headers**
+  - Four header rows: Quarter → Month → Day (per-day columns) → Sprint name spanning its date range
+  - Grid scrolls horizontally; auto-scrolls to the active sprint on load
+  - getSprints fetches last 4 closed sprints so past content is available when scrolling left
+  - Goal: columns read like a real calendar with time context
 
-- [ ] **Step 15 — Open epic in Jira**
+- [ ] **Step 15 — Fix grid width and constrain layout**
+  - The grid container should be constrained to the available viewport width, not expand to full content width
+  - Day columns should be as narrow as practical (just wide enough for a two-digit date number)
+  - Goal: the grid fits the screen without unnecessary whitespace; horizontal scroll handles overflow
+
+- [ ] **Step 16 — Backlog side panel**
+  - Remove backlog from the grid entirely
+  - Add a collapsible side panel on the right side of the page that shows backlog epics grouped by priority row
+  - A toggle button (e.g. "Backlog ▶") shows/hides the panel; when hidden, show a count badge of unplaced epics
+  - Epics can be dragged from the backlog panel into the grid, and vice versa
+  - Goal: backlog is accessible but not cluttering the planning grid
+
+- [ ] **Step 17 — Multiple named grids**
+  - Replace the single board/filter view with support for multiple named grids shown as tabs or a switcher
+  - Each grid has its own filter (controlling which epics appear) and its own board (controlling which sprints appear)
+  - Add a simple way to create, name, and delete grids — stored as Forge app properties per user
+  - The intent is to support different planning views (e.g. one per team or workstream) side by side
+  - Goal: users can manage several cross-project views without switching apps
+
+- [ ] **Step 18 — Open epic in Jira**
   - Each epic card's key (e.g. T0-123) should be a clickable link that opens the Jira issue in a new tab
   - Use `router.open()` from `@forge/bridge` to navigate to the issue URL: `/browse/{epicKey}`
   - Goal: one click from planner card to Jira ticket
 
-- [ ] **Step 16 — Epic status badge**
+- [ ] **Step 19 — Epic status badge**
   - `getEpics` already fetches the `status` field — surface it on each card as a small inline badge
-  - Show the status category name (To Do / In Progress / Done) rather than the raw workflow status, since status names vary by project
-  - Colour the badge to match the category: To Do = grey, In Progress = blue, Done = green
+  - Show the status category name (To Do / In Progress / Done) rather than the raw workflow status
+  - Colour the badge: To Do = grey, In Progress = blue, Done = green
   - Goal: workflow state is visible at a glance without opening the ticket
 
-- [ ] **Step 17 — Assignee avatars**
+- [ ] **Step 20 — Assignee avatars**
   - Extend `getEpics` to also fetch the `assignee` field (displayName + avatarUrl)
   - Render the assignee's avatar as a small (20px) circle in the bottom-right of each card; show their display name in a tooltip on hover
   - Show a neutral placeholder icon for unassigned epics
   - Goal: load distribution across team members is visible in the grid
 
-- [ ] **Step 18 — Filter selector fallback**
-  - The board auto-matches a filter by project key in JQL — this covers most cases but can fail if the JQL doesn't contain the key
-  - Add a small secondary `<select>` dropdown next to the board selector that lists all available filters, pre-selected to the auto-matched one
-  - Changing the filter dropdown re-fetches epics using the new filter ID
-  - Goal: users can manually override the filter if auto-matching picks the wrong one
+- [ ] **Step 21 — Filter selector fallback**
+  - The board auto-matches a filter by project key in JQL — add a small secondary dropdown so users can manually override it
+  - Changing the filter re-fetches epics using the new filter ID
+  - Goal: users can correct a bad auto-match without touching config
