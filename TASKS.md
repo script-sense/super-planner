@@ -55,19 +55,19 @@ Work through these tasks in order. Find the first unchecked task and implement i
   - Remove the Q1–Q4 column definitions; derive columns dynamically from the sprint list
   - Goal: grid columns reflect real sprints from Jira, not hardcoded quarters
 
-- [ ] **Step 9 — Multi-project mode**
+- [x] **Step 9 — Multi-project mode**
   - Remove the project selector dropdown
   - Change `getEpics` to fetch epics across all projects in a single JQL query
   - Discuss with the user what field or label to use as an inclusion filter so that only relevant epics are shown (e.g. a specific label, component, or custom field) — do not implement the filter until agreed
   - Goal: the grid shows a unified cross-project view
 
-- [ ] **Step 10 — Drag epics between cells**
+- [x] **Step 10 — Drag epics between cells**
   - Install `@dnd-kit/core` and wire up drag-and-drop on epic cards
   - Dragging an epic to a new cell updates its column (sprint) and row (priority) in local React state immediately
   - No persistence yet — refreshing the page resets positions
   - Goal: epics can be moved around the grid freely
 
-- [ ] **Step 11 — Persist positions via Jira issue properties**
+- [x] **Step 11 — Persist positions via Jira issue properties**
   - Add `write:jira-work` scope to `manifest.yml` (requires upgrade install)
   - Add a resolver that writes a Jira issue property to an epic: key = `super-planner`, value = `{ sprintId: number, sprintName: string, priority: string }`
   - On drop, call the resolver to write the property to the epic in Jira
@@ -75,7 +75,7 @@ Work through these tasks in order. Find the first unchecked task and implement i
   - Remove the fixVersions/priority-based placement logic — the issue property is now the sole source of truth for grid position
   - Goal: positions survive page refresh and live on the Jira ticket itself
 
-- [ ] **Step 12 — Loading and empty states**
+- [x] **Step 12 — Loading and empty states**
   - Show a spinner or skeleton while data is being fetched
   - Show a subtle "empty" indicator for cells that have no epics
   - Goal: the app feels responsive and complete at all grid states

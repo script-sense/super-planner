@@ -75,6 +75,7 @@ resolver.define('getFilters', async () => {
 });
 
 // Fetch all non-Done epics matching the given saved filter.
+// Also fetches the `super-planner` issue property so stored grid positions are included.
 resolver.define('getEpics', async (req) => {
     const { filterId } = req.payload;
 
@@ -86,6 +87,7 @@ resolver.define('getEpics', async (req) => {
             body: JSON.stringify({
                 jql: `filter = ${filterId} AND issuetype = Epic AND statusCategory != Done ORDER BY created DESC`,
                 fields: ['summary', 'priority', 'status'],
+                properties: ['super-planner'],
                 maxResults: 200,
             }),
         });
@@ -97,11 +99,36 @@ resolver.define('getEpics', async (req) => {
 
     const data = await response.json();
 
-    return data.issues.map(issue => ({
-        key: issue.key,
-        summary: issue.fields.summary,
-        priority: issue.fields.priority?.name ?? null,
-    }));
+    return data.issues.map(issue => {
+        // Issue properties are returned as an object keyed by property name
+        const position = issue.properties?.['super-planner'] ?? null;
+        return {
+            key: issue.key,
+            summary: issue.fields.summary,
+            priority: issue.fields.priority?.name ?? null,
+            // position is null if the epic has never been placed in the grid
+            position,
+        };
+    });
+});
+
+// Write the grid position for an epic as a Jira issue property.
+// This is called after every drag-and-drop so the position persists across refreshes.
+resolver.define('setEpicPosition', async (req) => {
+    const { epicKey, sprintId, sprintName, rowKey } = req.payload;
+
+    const response = await api
+        .asUser()
+        .requestJira(route`/rest/api/3/issue/${epicKey}/properties/super-planner`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sprintId, sprintName, rowKey }),
+        });
+
+    if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Jira API error ${response.status}: ${text}`);
+    }
 });
 
 export const handler = resolver.getDefinitions();

@@ -26,3 +26,4 @@ permissions:
     - read:board-scope:jira-software
     - read:issue-details:jira
     - read:project:jira
+    - write:jira-work

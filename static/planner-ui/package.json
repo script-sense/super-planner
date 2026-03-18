@@ -8,6 +8,8 @@
   "homepage": ".",
   "dependencies": {
     "@atlaskit/css-reset": "^6.6.2",
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/utilities": "^3.2.2",
     "@forge/bridge": "5.14.1",
     "react": "^16",
     "react-dom": "^16"
