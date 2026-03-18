@@ -102,31 +102,40 @@ Work through these tasks in order. Find the first unchecked task and implement i
   - Epics can be dragged from the backlog panel into the grid, and vice versa
   - Goal: backlog is accessible but not cluttering the planning grid
 
-- [ ] **Step 17 — Multiple named grids**
-  - Replace the single board/filter view with support for multiple named grids shown as tabs or a switcher
-  - Each grid has its own filter (controlling which epics appear) and its own board (controlling which sprints appear)
-  - Add a simple way to create, name, and delete grids — stored as Forge app properties per user
-  - The intent is to support different planning views (e.g. one per team or workstream) side by side
-  - Goal: users can manage several cross-project views without switching apps
+- [ ] **Step 17 — Multiple named grids via custom Jira field**
+  - A custom Jira Select field (e.g. "Planning Group") is set on epics to indicate which grid they belong to
+  - On load, discover the field ID by name using `GET /rest/api/3/field` — no hardcoding
+  - Fetch all available options for the field using `GET /rest/api/3/field/{fieldId}/context/{contextId}/option`
+  - Render one tab per option value (e.g. Engineering | Business) plus an "All" tab showing every epic
+  - Switching tabs re-filters the already-loaded epics client-side — no extra API call needed
+  - Epics with no value set for the field appear only in the "All" tab
+  - Goal: planning grid automatically reflects however many groups are defined in Jira
 
-- [ ] **Step 18 — Open epic in Jira**
+- [ ] **Step 18 — Manage Planning Group options from the app**
+  - Add a settings panel (gear icon or small "Manage groups" link) that lists current field options
+  - Allow adding a new option: text input + "Add" button → `POST /rest/api/3/field/{fieldId}/context/{contextId}/option`
+  - Allow deleting an option (with a warning if any epics currently use it)
+  - Requires `manage:jira-configuration` scope (new major version, upgrade install needed)
+  - Goal: users can define new planning groups without leaving the app or needing Jira admin UI
+
+- [ ] **Step 19 — Open epic in Jira**
   - Each epic card's key (e.g. T0-123) should be a clickable link that opens the Jira issue in a new tab
   - Use `router.open()` from `@forge/bridge` to navigate to the issue URL: `/browse/{epicKey}`
   - Goal: one click from planner card to Jira ticket
 
-- [ ] **Step 19 — Epic status badge**
+- [ ] **Step 20 — Epic status badge**
   - `getEpics` already fetches the `status` field — surface it on each card as a small inline badge
   - Show the status category name (To Do / In Progress / Done) rather than the raw workflow status
   - Colour the badge: To Do = grey, In Progress = blue, Done = green
   - Goal: workflow state is visible at a glance without opening the ticket
 
-- [ ] **Step 20 — Assignee avatars**
+- [ ] **Step 21 — Assignee avatars**
   - Extend `getEpics` to also fetch the `assignee` field (displayName + avatarUrl)
   - Render the assignee's avatar as a small (20px) circle in the bottom-right of each card; show their display name in a tooltip on hover
   - Show a neutral placeholder icon for unassigned epics
   - Goal: load distribution across team members is visible in the grid
 
-- [ ] **Step 21 — Filter selector fallback**
+- [ ] **Step 22 — Filter selector fallback**
   - The board auto-matches a filter by project key in JQL — add a small secondary dropdown so users can manually override it
   - Changing the filter re-fetches epics using the new filter ID
   - Goal: users can correct a bad auto-match without touching config
