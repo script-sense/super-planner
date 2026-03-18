@@ -224,6 +224,27 @@ const childIssueStyle = {
     borderTop: '1px solid #b3c6f7',
 };
 
+const STATUS_COLORS = {
+    'To Do':       { bg: '#e4e5e7', color: '#44546f' },
+    'In Progress': { bg: '#cce0ff', color: '#0055cc' },
+    'Done':        { bg: '#baf3db', color: '#216e4e' },
+};
+
+function statusBadgeStyle(category) {
+    const c = STATUS_COLORS[category] ?? { bg: '#e4e5e7', color: '#44546f' };
+    return {
+        display: 'inline-block',
+        fontSize: 10,
+        fontWeight: 'bold',
+        padding: '1px 5px',
+        borderRadius: 3,
+        background: c.bg,
+        color: c.color,
+        marginLeft: 6,
+        verticalAlign: 'middle',
+    };
+}
+
 const childItemStyle = {
     fontSize: 12,
     padding: '2px 0',
@@ -393,8 +414,41 @@ function EpicCard({ epic, isDragOverlay, row, focusAreaField, focusAreaOptions, 
             {...attributes}
         >
             <div style={cardHeaderStyle} onClick={toggle}>
-                <span style={cardKeyStyle}>{epic.key}</span>
-                <span style={{ fontSize: 11, color: '#555' }}>{expanded ? '▲' : '▼'}</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    {/* Step 19 — click key to open in Jira */}
+                    <span
+                        style={{ ...cardKeyStyle, cursor: 'pointer', textDecoration: 'underline' }}
+                        onClick={e => { e.stopPropagation(); router.open(`/browse/${epic.key}`); }}
+                    >
+                        {epic.key}
+                    </span>
+                    {/* Step 20 — status badge */}
+                    {epic.statusCategory && (
+                        <span style={statusBadgeStyle(epic.statusCategory)}>{epic.statusCategory}</span>
+                    )}
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {/* Step 21 — assignee avatar */}
+                    {!isDragOverlay && (
+                        epic.assignee
+                            ? (
+                                <img
+                                    src={epic.assignee.avatarUrl}
+                                    title={epic.assignee.displayName}
+                                    style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0 }}
+                                    alt={epic.assignee.displayName}
+                                />
+                            ) : (
+                                <span
+                                    title="Unassigned"
+                                    style={{ width: 20, height: 20, borderRadius: '50%', background: '#ddd', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#999', flexShrink: 0 }}
+                                >
+                                    ?
+                                </span>
+                            )
+                    )}
+                    <span style={{ fontSize: 11, color: '#555' }}>{expanded ? '▲' : '▼'}</span>
+                </span>
             </div>
             <div style={{ fontSize: 13, marginTop: 2 }}>{epic.summary}</div>
 
@@ -873,6 +927,7 @@ function App() {
     const [epics, setEpics] = useState(null);
     const [focusAreaField, setFocusAreaField] = useState(undefined); // undefined = loading, null = not found
     const [selectedTab, setSelectedTab] = useState('all');
+    const [filterOverride, setFilterOverride] = useState(null); // null = use auto-matched
     const [error, setError] = useState(null);
     const isInitialBoardSelection = useRef(true);
 
@@ -903,18 +958,20 @@ function App() {
             .then(setSprints)
             .catch(err => setError(err.message ?? 'Failed to load sprints'));
         const board = boards.find(b => b.id === selectedBoard || b.id === Number(selectedBoard));
+        setFilterOverride(null); // reset manual override when board changes
         setSelectedFilter(findMatchingFilter(filters, board));
     }, [selectedBoard]);
 
     // Only re-fetch epics when the field ID or filter changes — not when options list changes.
     const focusAreaFieldId = focusAreaField?.fieldId ?? null;
+    const activeFilter = filterOverride ?? selectedFilter;
     useEffect(() => {
-        if (!selectedFilter || focusAreaField === undefined) return;
+        if (!activeFilter || focusAreaField === undefined) return;
         setEpics(null);
-        invoke('getEpics', { filterId: selectedFilter, focusAreaFieldId })
+        invoke('getEpics', { filterId: activeFilter, focusAreaFieldId })
             .then(setEpics)
             .catch(err => setError(err.message ?? 'Failed to load epics'));
-    }, [selectedFilter, focusAreaFieldId]);
+    }, [activeFilter, focusAreaFieldId]);
 
     if (error) return <div>Error: {error}</div>;
 
@@ -933,21 +990,41 @@ function App() {
 
     return (
         <div style={{ padding: 16, fontFamily: 'sans-serif', width: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
-            <div style={{ marginBottom: 16 }}>
-                <label htmlFor="board-select">Board: </label>
-                <select
-                    id="board-select"
-                    value={selectedBoard ?? ''}
-                    onChange={e => setSelectedBoard(e.target.value)}
-                    disabled={!boards}
-                >
-                    {boards
-                        ? boards.map(b => (
-                              <option key={b.id} value={b.id}>{b.name}</option>
-                          ))
-                        : <option>Loading...</option>
-                    }
-                </select>
+            <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                <div>
+                    <label htmlFor="board-select" style={{ marginRight: 6 }}>Board:</label>
+                    <select
+                        id="board-select"
+                        value={selectedBoard ?? ''}
+                        onChange={e => setSelectedBoard(e.target.value)}
+                        disabled={!boards}
+                    >
+                        {boards
+                            ? boards.map(b => (
+                                  <option key={b.id} value={b.id}>{b.name}</option>
+                              ))
+                            : <option>Loading...</option>
+                        }
+                    </select>
+                </div>
+                {/* Step 22 — filter override */}
+                <div>
+                    <label htmlFor="filter-select" style={{ marginRight: 6, fontSize: 13 }}>Filter:</label>
+                    <select
+                        id="filter-select"
+                        value={filterOverride ?? selectedFilter ?? ''}
+                        onChange={e => setFilterOverride(e.target.value || null)}
+                        disabled={!filters}
+                        style={{ fontSize: 13 }}
+                    >
+                        {filters
+                            ? filters.map(f => (
+                                  <option key={f.id} value={f.id}>{f.name}{f.id === selectedFilter && !filterOverride ? ' ✓' : ''}</option>
+                              ))
+                            : <option>Loading...</option>
+                        }
+                    </select>
+                </div>
             </div>
 
             {focusAreaField && (

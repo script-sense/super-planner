@@ -169,7 +169,7 @@ resolver.define('getFilters', async () => {
 resolver.define('getEpics', async (req) => {
     const { filterId, focusAreaFieldId } = req.payload;
 
-    const fields = ['summary', 'priority', 'status', 'customfield_10020'];
+    const fields = ['summary', 'priority', 'status', 'assignee', 'customfield_10020'];
     if (focusAreaFieldId) fields.push(focusAreaFieldId);
 
     const response = await api
@@ -203,6 +203,10 @@ resolver.define('getEpics', async (req) => {
             key: issue.key,
             summary: issue.fields.summary,
             priority: issue.fields.priority?.name ?? null,
+            statusCategory: issue.fields.status?.statusCategory?.name ?? null,
+            assignee: issue.fields.assignee
+                ? { displayName: issue.fields.assignee.displayName, avatarUrl: issue.fields.assignee.avatarUrls?.['24x24'] ?? null }
+                : null,
             // sprintId from the actual Jira sprint field — source of truth for column placement
             sprintId: activeSprint ? String(activeSprint.id) : null,
             focusArea,
