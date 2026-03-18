@@ -21,6 +21,7 @@ const ROWS = [
 
 const VALID_PRIORITY_KEYS = new Set(ROWS.map(r => r.key));
 const BACKLOG_COLUMN = { id: 'backlog', name: 'Backlog', state: 'backlog' };
+const UNASSIGNED_KEY = '__unassigned__';
 const THIS_YEAR = new Date().getFullYear();
 
 // --- Calendar helpers ---
@@ -114,18 +115,24 @@ function getPriorityRow(priority) {
     return 'Lowest';
 }
 
-function buildGridData(epics, sprints, positions) {
+// grid[sectionKey][rowKey][colId] = [epics]
+function buildGridData(epics, sprints, positions, sections) {
     const grid = {};
-    for (const row of ROWS) {
-        grid[row.key] = { backlog: [] };
-        for (const s of sprints) grid[row.key][s.id] = [];
+    for (const section of sections) {
+        grid[section.key] = {};
+        for (const row of ROWS) {
+            grid[section.key][row.key] = { backlog: [] };
+            for (const s of sprints) grid[section.key][row.key][s.id] = [];
+        }
     }
+    const sectionKeys = new Set(sections.map(s => s.key));
     for (const epic of epics) {
-        const local  = positions[epic.key];
-        const rowKey = local?.rowKey ?? getPriorityRow(epic.priority);
-        const colId  = local?.colId  ?? epic.sprintId ?? BACKLOG_COLUMN.id;
-        const row    = grid[rowKey] ?? grid['Lowest'];
-        // Guard against stale sprint IDs
+        const local   = positions[epic.key];
+        const rowKey  = local?.rowKey ?? getPriorityRow(epic.priority);
+        const colId   = local?.colId  ?? epic.sprintId ?? BACKLOG_COLUMN.id;
+        const secKey  = sectionKeys.has(epic.focusArea) ? epic.focusArea : UNASSIGNED_KEY;
+        const secGrid = grid[secKey] ?? grid[UNASSIGNED_KEY];
+        const row     = secGrid[rowKey] ?? secGrid['Lowest'];
         if (colId === BACKLOG_COLUMN.id || row[colId] !== undefined) {
             (row[colId] ?? row.backlog).push(epic);
         } else {
@@ -565,7 +572,17 @@ function PlanningGrid({ epics, sprints, focusAreaField, focusAreaOptions, onFocu
     const sprintSpans = {};
     for (const s of sprints) sprintSpans[s.id] = sprintDaySpan(s, days);
 
-    const gridData = buildGridData(epics, sprints, positions);
+    // One section per focus area option + unassigned at end.
+    // If no focus area field, a single unnamed section shows everything.
+    const hasSections = focusAreaField && focusAreaOptions.length > 0;
+    const sections = hasSections
+        ? [...focusAreaOptions.map(v => ({ key: v, label: v })), { key: UNASSIGNED_KEY, label: 'No Focus Area' }]
+        : [{ key: UNASSIGNED_KEY, label: null }];
+
+    const gridData = buildGridData(epics, sprints, positions, sections);
+
+    const HEADER_ROWS = 4;
+    const rowsPerSection = ROWS.length + (hasSections ? 1 : 0); // section header row + 5 priority rows
 
     // Scroll to active sprint on first render
     useEffect(() => {
@@ -574,9 +591,7 @@ function PlanningGrid({ epics, sprints, focusAreaField, focusAreaOptions, onFocu
         if (!active) return;
         const sp = sprintSpans[active.id];
         if (!sp) return;
-        // 120px row label + days before active sprint
-        const offset = 120 + sp.startIdx * DAY_COL_WIDTH - 40;
-        scrollRef.current.scrollLeft = Math.max(0, offset);
+        scrollRef.current.scrollLeft = Math.max(0, 120 + sp.startIdx * DAY_COL_WIDTH - 40);
     }, [sprints, days.length]);
 
     function handleDragStart({ active }) {
@@ -586,23 +601,97 @@ function PlanningGrid({ epics, sprints, focusAreaField, focusAreaOptions, onFocu
     function handleDragEnd({ active, over }) {
         setActiveEpic(null);
         if (!over) return;
-        const [rowKey, colId] = over.id.split('|');
+        const [sectionKey, rowKey, colId] = over.id.split('|');
 
         setPositions(prev => ({ ...prev, [active.id]: { rowKey, colId } }));
 
-        const isBacklog = colId === BACKLOG_COLUMN.id;
-        const sprintId  = isBacklog ? null : Number(colId);
-
+        const sprintId = colId === BACKLOG_COLUMN.id ? null : Number(colId);
         invoke('assignEpicToSprint', { epicKey: active.id, sprintId })
             .catch(err => console.error('Failed to assign sprint:', err));
-
         invoke('updateEpicPriority', { epicKey: active.id, priority: rowKey })
             .catch(err => console.error('Failed to update priority:', err));
+
+        // Update focus area when the epic crosses into a different section
+        if (focusAreaField) {
+            const epic = epics.find(e => e.key === active.id);
+            const currentKey = epic?.focusArea ?? UNASSIGNED_KEY;
+            if (sectionKey !== currentKey) {
+                const newFocusArea = sectionKey === UNASSIGNED_KEY ? null : sectionKey;
+                onFocusAreaChange(active.id, newFocusArea);
+                invoke('updateEpicFocusArea', {
+                    epicKey: active.id,
+                    fieldId: focusAreaField.fieldId,
+                    value: newFocusArea,
+                }).catch(err => console.error('Failed to update focus area:', err));
+            }
+        }
     }
 
     const gridTemplateColumns = `120px repeat(${numDays}, ${DAY_COL_WIDTH}px)`;
+    const backlogCount = sections.reduce(
+        (n, sec) => n + ROWS.reduce((m, row) => m + (gridData[sec.key]?.[row.key]?.backlog.length ?? 0), 0), 0
+    );
 
-    const backlogCount = ROWS.reduce((n, row) => n + gridData[row.key].backlog.length, 0);
+    function renderSection(section, si) {
+        const baseRow     = HEADER_ROWS + 1 + si * rowsPerSection;
+        const dataStartRow = baseRow + (hasSections ? 1 : 0);
+        return (
+            <React.Fragment key={section.key}>
+                {/* Section header row */}
+                {hasSections && (
+                    <>
+                        <div style={{
+                            gridRow: baseRow, gridColumn: 1,
+                            background: '#e8eaf0',
+                            borderTop: si > 0 ? '2px solid #bbb' : 'none',
+                            borderBottom: '1px solid #ccc',
+                            borderRight: '1px solid #ccc',
+                            padding: '5px 12px',
+                            fontWeight: 'bold', fontSize: 13, color: '#333',
+                            position: 'sticky', left: 0, zIndex: 1,
+                        }}>
+                            {section.label}
+                        </div>
+                        <div style={{
+                            gridRow: baseRow, gridColumn: `2 / span ${numDays}`,
+                            background: '#e8eaf0',
+                            borderTop: si > 0 ? '2px solid #bbb' : 'none',
+                            borderBottom: '1px solid #ccc',
+                        }} />
+                    </>
+                )}
+
+                {/* Priority rows */}
+                {ROWS.map((row, ri) => {
+                    const dataRow = dataStartRow + ri;
+                    return (
+                        <React.Fragment key={row.key}>
+                            <div style={{ ...rowLabelStyle(row), gridRow: dataRow, gridColumn: 1 }}>
+                                {row.label}
+                            </div>
+                            {sprints.map(s => {
+                                const sp = sprintSpans[s.id];
+                                return (
+                                    <DroppableCell
+                                        key={s.id}
+                                        id={`${section.key}|${row.key}|${s.id}`}
+                                        gridRow={dataRow}
+                                        gridColumn={sp ? `${sp.startIdx + 2} / span ${sp.span}` : '2'}
+                                    >
+                                        {(gridData[section.key]?.[row.key]?.[s.id] ?? []).map(epic => (
+                                            <EpicCard key={epic.key} epic={epic} row={row}
+                                                focusAreaField={focusAreaField} focusAreaOptions={focusAreaOptions}
+                                                onFocusAreaChange={onFocusAreaChange} progress={epicProgress?.[epic.key] ?? null} />
+                                        ))}
+                                    </DroppableCell>
+                                );
+                            })}
+                        </React.Fragment>
+                    );
+                })}
+            </React.Fragment>
+        );
+    }
 
     return (
         <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
@@ -618,121 +707,98 @@ function PlanningGrid({ epics, sprints, focusAreaField, focusAreaOptions, onFocu
                 <div
                     ref={scrollRef}
                     style={{
-                        flex: 1,
-                        minWidth: 0,
-                        display: 'grid',
-                        gridTemplateColumns,
-                        overflowX: 'auto',
-                        border: '1px solid #ccc',
-                        borderRadius: 4,
+                        flex: 1, minWidth: 0,
+                        display: 'grid', gridTemplateColumns,
+                        overflowX: 'auto', border: '1px solid #ccc', borderRadius: 4,
                     }}
                 >
-                            <div style={cornerStyle} />
+                    <div style={cornerStyle} />
 
-                            {/* Row 1 — Quarters */}
-                            {quarterGroups.map((q, i) => (
-                                <div key={i} style={quarterCellStyle({
-                                    gridRow: 1,
-                                    gridColumn: `${q.startIdx + 2} / span ${q.span}`,
-                                })}>
-                                    {q.label}
-                                </div>
-                            ))}
+                    {/* Row 1 — Quarters */}
+                    {quarterGroups.map((q, i) => (
+                        <div key={i} style={quarterCellStyle({ gridRow: 1, gridColumn: `${q.startIdx + 2} / span ${q.span}` })}>
+                            {q.label}
+                        </div>
+                    ))}
 
-                            {/* Row 2 — Months */}
-                            {monthGroups.map((m, i) => (
-                                <div key={i} style={monthCellStyle({
-                                    gridRow: 2,
-                                    gridColumn: `${m.startIdx + 2} / span ${m.span}`,
-                                })}>
-                                    {m.label}
-                                </div>
-                            ))}
+                    {/* Row 2 — Months */}
+                    {monthGroups.map((m, i) => (
+                        <div key={i} style={monthCellStyle({ gridRow: 2, gridColumn: `${m.startIdx + 2} / span ${m.span}` })}>
+                            {m.label}
+                        </div>
+                    ))}
 
-                            {/* Row 3 — Day ticks */}
-                            {days.map((d, i) => {
-                                const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-                                return (
-                                    <div key={i} style={{
-                                        ...dayCellStyle,
-                                        gridRow: 3,
-                                        gridColumn: i + 2,
-                                        background: isWeekend ? '#e8e9ec' : '#f4f5f7',
-                                        color: isWeekend ? '#aaa' : '#888',
-                                    }}>
-                                        {d.getDate()}
-                                    </div>
-                                );
-                            })}
+                    {/* Row 3 — Day ticks */}
+                    {days.map((d, i) => {
+                        const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+                        return (
+                            <div key={i} style={{
+                                ...dayCellStyle, gridRow: 3, gridColumn: i + 2,
+                                background: isWeekend ? '#e8e9ec' : '#f4f5f7',
+                                color: isWeekend ? '#aaa' : '#888',
+                            }}>
+                                {d.getDate()}
+                            </div>
+                        );
+                    })}
 
-                            {/* Row 4 — Sprint names */}
-                            {sprints.map(s => {
-                                const sp = sprintSpans[s.id];
-                                return (
-                                    <div key={s.id} style={sprintCellStyle(s.state === 'active', {
-                                        gridRow: 4,
-                                        gridColumn: sp ? `${sp.startIdx + 2} / span ${sp.span}` : '2',
-                                    })}>
-                                        {s.name}
-                                        {s.state === 'active' && (
-                                            <span style={{ fontSize: 10, fontWeight: 'normal', marginLeft: 4 }}>· active</span>
-                                        )}
-                                    </div>
-                                );
-                            })}
+                    {/* Row 4 — Sprint names */}
+                    {sprints.map(s => {
+                        const sp = sprintSpans[s.id];
+                        return (
+                            <div key={s.id} style={sprintCellStyle(s.state === 'active', {
+                                gridRow: 4, gridColumn: sp ? `${sp.startIdx + 2} / span ${sp.span}` : '2',
+                            })}>
+                                {s.name}
+                                {s.state === 'active' && <span style={{ fontSize: 10, fontWeight: 'normal', marginLeft: 4 }}>· active</span>}
+                            </div>
+                        );
+                    })}
 
-                            {/* Data rows */}
-                            {ROWS.map((row, ri) => {
-                                const dataRow = ri + 5;
-                                return (
-                                    <React.Fragment key={row.key}>
-                                        <div style={{ ...rowLabelStyle(row), gridRow: dataRow, gridColumn: 1 }}>
-                                            {row.label}
-                                        </div>
-                                        {sprints.map(s => {
-                                            const sp = sprintSpans[s.id];
-                                            return (
-                                                <DroppableCell
-                                                    key={s.id}
-                                                    id={`${row.key}|${s.id}`}
-                                                    gridRow={dataRow}
-                                                    gridColumn={sp ? `${sp.startIdx + 2} / span ${sp.span}` : '2'}
-                                                >
-                                                    {(gridData[row.key][s.id] ?? []).map(epic => (
-                                                        <EpicCard key={epic.key} epic={epic} row={row} focusAreaField={focusAreaField} focusAreaOptions={focusAreaOptions} onFocusAreaChange={onFocusAreaChange} progress={epicProgress?.[epic.key] ?? null} />
-                                                    ))}
-                                                </DroppableCell>
-                                            );
-                                        })}
-                                    </React.Fragment>
-                                );
-                            })}
+                    {/* Focus area sections */}
+                    {sections.map((section, si) => renderSection(section, si))}
                 </div>
 
-                {/* Backlog toggle button — floats outside the grid when panel is hidden */}
+                {/* Backlog toggle */}
                 {!showBacklog && (
                     <button style={{ ...toggleButtonStyle, alignSelf: 'flex-start', marginTop: 4 }} onClick={() => setShowBacklog(true)}>
                         Backlog {backlogCount > 0 && `(${backlogCount})`} ▶
                     </button>
                 )}
 
-                {/* Collapsible backlog panel */}
+                {/* Collapsible backlog panel — sectioned to match the grid */}
                 {showBacklog && (
                     <div style={{ ...backlogPanelStyle, border: '1px solid #ccc', borderRadius: 4 }}>
                         <div style={backlogHeaderStyle}>
                             <span>Backlog {backlogCount > 0 && `(${backlogCount})`}</span>
                             <button style={toggleButtonStyle} onClick={() => setShowBacklog(false)}>✕ Hide</button>
                         </div>
-                        {ROWS.map(row => (
-                            <div key={row.key}>
-                                <div style={{ ...rowLabelStyle(row), borderRight: 'none', borderBottom: 'none', paddingTop: 8, paddingBottom: 4 }}>
-                                    {row.label}
-                                </div>
-                                <DroppableCell id={`${row.key}|backlog`}>
-                                    {gridData[row.key].backlog.map(epic => (
-                                        <EpicCard key={epic.key} epic={epic} row={row} focusAreaField={focusAreaField} focusAreaOptions={focusAreaOptions} onFocusAreaChange={onFocusAreaChange} progress={epicProgress?.[epic.key] ?? null} />
-                                    ))}
-                                </DroppableCell>
+                        {sections.map((section, si) => (
+                            <div key={section.key}>
+                                {hasSections && (
+                                    <div style={{
+                                        padding: '4px 10px', fontSize: 12, fontWeight: 'bold',
+                                        background: '#e8eaf0',
+                                        borderTop: si > 0 ? '1px solid #ccc' : 'none',
+                                        borderBottom: '1px solid #ccc', color: '#333',
+                                    }}>
+                                        {section.label}
+                                    </div>
+                                )}
+                                {ROWS.map(row => (
+                                    <div key={row.key}>
+                                        <div style={{ ...rowLabelStyle(row), borderRight: 'none', borderBottom: 'none', paddingTop: 8, paddingBottom: 4 }}>
+                                            {row.label}
+                                        </div>
+                                        <DroppableCell id={`${section.key}|${row.key}|backlog`}>
+                                            {(gridData[section.key]?.[row.key]?.backlog ?? []).map(epic => (
+                                                <EpicCard key={epic.key} epic={epic} row={row}
+                                                    focusAreaField={focusAreaField} focusAreaOptions={focusAreaOptions}
+                                                    onFocusAreaChange={onFocusAreaChange} progress={epicProgress?.[epic.key] ?? null} />
+                                            ))}
+                                        </DroppableCell>
+                                    </div>
+                                ))}
                             </div>
                         ))}
                     </div>
@@ -925,25 +991,6 @@ function FocusAreaSettings({ focusAreaField, epics, onFieldChange }) {
     );
 }
 
-const tabBarStyle = {
-    display: 'flex',
-    gap: 4,
-    marginBottom: 12,
-    borderBottom: '2px solid #ddd',
-    paddingBottom: 0,
-};
-
-const tabStyle = (active) => ({
-    padding: '6px 14px',
-    fontSize: 13,
-    fontWeight: active ? 'bold' : 'normal',
-    color: active ? '#0052cc' : '#444',
-    background: 'none',
-    border: 'none',
-    borderBottom: active ? '2px solid #0052cc' : '2px solid transparent',
-    marginBottom: -2,
-    cursor: 'pointer',
-});
 
 function App() {
     const [boards, setBoards] = useState(null);
@@ -953,7 +1000,6 @@ function App() {
     const [sprints, setSprints] = useState(null);
     const [epics, setEpics] = useState(null);
     const [focusAreaField, setFocusAreaField] = useState(undefined); // undefined = loading, null = not found
-    const [selectedTab, setSelectedTab] = useState('all');
     const [epicProgress, setEpicProgress] = useState({});
     const [error, setError] = useState(null);
 
@@ -1023,14 +1069,6 @@ function App() {
         ? focusAreaField.options.map(o => o.value)
         : (epics ? [...new Set(epics.map(e => e.focusArea).filter(Boolean))].sort() : []);
 
-    const tabs = focusAreaField && focusAreaOptions.length
-        ? [{ id: 'all', label: 'All' }, ...focusAreaOptions.map(v => ({ id: v, label: v }))]
-        : null;
-
-    const visibleEpics = epics && tabs
-        ? (selectedTab === 'all' ? epics : epics.filter(e => e.focusArea === selectedTab))
-        : epics;
-
     return (
         <div style={{ padding: 16, fontFamily: 'sans-serif', width: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
             <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
@@ -1071,40 +1109,18 @@ function App() {
 
             {focusAreaField && (
                 <div style={{ marginBottom: 8 }}>
-                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
-                        {tabs && (
-                            <div style={tabBarStyle}>
-                                {tabs.map(tab => (
-                                    <button
-                                        key={tab.id}
-                                        style={tabStyle(selectedTab === tab.id)}
-                                        onClick={() => setSelectedTab(tab.id)}
-                                    >
-                                        {tab.label}
-                                        {epics && (
-                                            <span style={{ marginLeft: 5, fontSize: 11, color: '#888' }}>
-                                                ({tab.id === 'all'
-                                                    ? epics.length
-                                                    : epics.filter(e => e.focusArea === tab.id).length})
-                                            </span>
-                                        )}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-                        <FocusAreaSettings
-                            focusAreaField={focusAreaField}
-                            epics={epics}
-                            onFieldChange={setFocusAreaField}
-                        />
-                    </div>
+                    <FocusAreaSettings
+                        focusAreaField={focusAreaField}
+                        epics={epics}
+                        onFieldChange={setFocusAreaField}
+                    />
                 </div>
             )}
 
-            {!sprints || !visibleEpics
+            {!sprints || !epics
                 ? <GridSkeleton />
                 : <PlanningGrid
-                    epics={visibleEpics}
+                    epics={epics}
                     sprints={sprints}
                     focusAreaField={focusAreaField}
                     focusAreaOptions={focusAreaOptions}
