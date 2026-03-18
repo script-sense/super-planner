@@ -90,19 +90,19 @@ Work through these tasks in order. Find the first unchecked task and implement i
   - getSprints fetches last 4 closed sprints so past content is available when scrolling left
   - Goal: columns read like a real calendar with time context
 
-- [ ] **Step 15 — Fix grid width and constrain layout**
+- [x] **Step 15 — Fix grid width and constrain layout**
   - The grid container should be constrained to the available viewport width, not expand to full content width
   - Day columns should be as narrow as practical (just wide enough for a two-digit date number)
   - Goal: the grid fits the screen without unnecessary whitespace; horizontal scroll handles overflow
 
-- [ ] **Step 16 — Backlog side panel**
+- [x] **Step 16 — Backlog side panel**
   - Remove backlog from the grid entirely
   - Add a collapsible side panel on the right side of the page that shows backlog epics grouped by priority row
   - A toggle button (e.g. "Backlog ▶") shows/hides the panel; when hidden, show a count badge of unplaced epics
   - Epics can be dragged from the backlog panel into the grid, and vice versa
   - Goal: backlog is accessible but not cluttering the planning grid
 
-- [ ] **Step 17 — Multiple named grids via "Focus Area" custom field**
+- [x] **Step 17 — Multiple named grids via "Focus Area" custom field**
   - The custom Jira Select field is named "Focus Area" (set up manually in Jira settings)
   - Field name stored as a constant `FOCUS_AREA_FIELD_NAME = 'Focus Area'` in the resolver — easy to change
   - New `getFocusAreaField` resolver: calls `GET /rest/api/3/field`, finds the field by name, then fetches its
@@ -114,7 +114,7 @@ Work through these tasks in order. Find the first unchecked task and implement i
   - Epics with no Focus Area value appear only in the "All" tab
   - Goal: planning grid automatically reflects however many groups are defined in Jira
 
-- [ ] **Step 18 — Manage Focus Area options from the app**
+- [x] **Step 18 — Manage Focus Area options from the app**
   - Add a ⚙ button next to the tabs that opens a small inline panel listing current options
   - Allow adding a new option: text input + "Add" → `POST /rest/api/3/field/{fieldId}/context/{contextId}/option`
   - Allow deleting an option → `DELETE /rest/api/3/field/{fieldId}/context/{contextId}/option/{optionId}`
@@ -124,24 +124,24 @@ Work through these tasks in order. Find the first unchecked task and implement i
   - Requires `manage:jira-configuration` scope (major version bump, upgrade install needed)
   - Goal: users can define new planning groups and assign epics without leaving the planner
 
-- [ ] **Step 19 — Open epic in Jira**
+- [x] **Step 19 — Open epic in Jira**
   - Each epic card's key (e.g. T0-123) should be a clickable link that opens the Jira issue in a new tab
   - Use `router.open()` from `@forge/bridge` to navigate to the issue URL: `/browse/{epicKey}`
   - Goal: one click from planner card to Jira ticket
 
-- [ ] **Step 20 — Epic status badge**
+- [x] **Step 20 — Epic status badge**
   - `getEpics` already fetches the `status` field — surface it on each card as a small inline badge
   - Show the status category name (To Do / In Progress / Done) rather than the raw workflow status
   - Colour the badge: To Do = grey, In Progress = blue, Done = green
   - Goal: workflow state is visible at a glance without opening the ticket
 
-- [ ] **Step 21 — Assignee avatars**
+- [x] **Step 21 — Assignee avatars**
   - Extend `getEpics` to also fetch the `assignee` field (displayName + avatarUrl)
   - Render the assignee's avatar as a small (20px) circle in the bottom-right of each card; show their display name in a tooltip on hover
   - Show a neutral placeholder icon for unassigned epics
   - Goal: load distribution across team members is visible in the grid
 
-- [ ] **Step 22 — Filter selector fallback**
+- [x] **Step 22 — Filter selector fallback**
   - The board auto-matches a filter by project key in JQL — add a small secondary dropdown so users can manually override it
   - Changing the filter re-fetches epics using the new filter ID
   - Goal: users can correct a bad auto-match without touching config

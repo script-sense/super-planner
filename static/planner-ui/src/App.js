@@ -601,7 +601,7 @@ function PlanningGrid({ epics, sprints, focusAreaField, focusAreaOptions, onFocu
         if (!active) return;
         const sp = sprintSpans[active.id];
         if (!sp) return;
-        scrollRef.current.scrollLeft = Math.max(0, 120 + sp.startIdx * DAY_COL_WIDTH - 40);
+        scrollRef.current.scrollLeft = Math.max(0, sp.startIdx * DAY_COL_WIDTH - 20);
     }, [sprints, days.length]);
 
     function handleDragStart({ active }) {
@@ -712,16 +712,19 @@ function PlanningGrid({ epics, sprints, focusAreaField, focusAreaOptions, onFocu
                 }
             `}</style>
 
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, height: '100%' }}>
-                {/* Scrollable calendar grid — scroll container for BOTH axes so sticky headers work */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                {/* Scrollable calendar grid — overflowX:auto handles horizontal scroll + left-sticky row labels;
+                    overflowY:clip does NOT create a scroll container so top-sticky headers propagate up to the
+                    App wrapper (overflowY:auto), which is the actual vertical scroll container. */}
                 <div
                     ref={scrollRef}
                     style={{
-                        flex: 1, minWidth: 0, height: '100%',
+                        flex: 1, minWidth: 0,
                         display: 'grid',
                         gridTemplateColumns,
                         gridTemplateRows: `${HDR_Q}px ${HDR_M}px ${HDR_D}px ${HDR_S}px`,
-                        overflowX: 'auto', overflowY: 'auto',
+                        alignContent: 'start',
+                        overflowX: 'auto', overflowY: 'clip',
                         border: '1px solid #ccc', borderRadius: 4,
                     }}
                 >
@@ -789,7 +792,7 @@ function PlanningGrid({ epics, sprints, focusAreaField, focusAreaOptions, onFocu
 
                 {/* Collapsible backlog panel — sectioned to match the grid */}
                 {showBacklog && (
-                    <div style={{ ...backlogPanelStyle, border: '1px solid #ccc', borderRadius: 4, alignSelf: 'stretch', overflowY: 'auto' }}>
+                    <div style={{ ...backlogPanelStyle, border: '1px solid #ccc', borderRadius: 4, position: 'sticky', top: 0, maxHeight: '100vh', overflowY: 'auto' }}>
                         <div style={backlogHeaderStyle}>
                             <span>Backlog {backlogCount > 0 && `(${backlogCount})`}</span>
                             <button style={toggleButtonStyle} onClick={() => setShowBacklog(false)}>✕ Hide</button>
@@ -1138,8 +1141,8 @@ function App() {
                 </div>
             )}
 
-            {/* Grid area fills remaining viewport height */}
-            <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+            {/* Grid area — vertical scroll container; grid grows with content, headers stay sticky */}
+            <div style={{ flex: 1, minHeight: 0, overflowX: 'hidden', overflowY: 'auto' }}>
                 {!sprints || !epics
                     ? <GridSkeleton />
                     : <PlanningGrid
