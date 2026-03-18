@@ -665,6 +665,26 @@ async function navigateToBoard(boardId) {
     router.navigate(`${base}/${boardId}`);
 }
 
+const tabBarStyle = {
+    display: 'flex',
+    gap: 4,
+    marginBottom: 12,
+    borderBottom: '2px solid #ddd',
+    paddingBottom: 0,
+};
+
+const tabStyle = (active) => ({
+    padding: '6px 14px',
+    fontSize: 13,
+    fontWeight: active ? 'bold' : 'normal',
+    color: active ? '#0052cc' : '#444',
+    background: 'none',
+    border: 'none',
+    borderBottom: active ? '2px solid #0052cc' : '2px solid transparent',
+    marginBottom: -2,
+    cursor: 'pointer',
+});
+
 function App() {
     const [boards, setBoards] = useState(null);
     const [selectedBoard, setSelectedBoard] = useState(null);
@@ -672,14 +692,17 @@ function App() {
     const [selectedFilter, setSelectedFilter] = useState(null);
     const [sprints, setSprints] = useState(null);
     const [epics, setEpics] = useState(null);
+    const [focusAreaField, setFocusAreaField] = useState(undefined); // undefined = loading, null = not found
+    const [selectedTab, setSelectedTab] = useState('all');
     const [error, setError] = useState(null);
     const isInitialBoardSelection = useRef(true);
 
     useEffect(() => {
-        Promise.all([invoke('getBoards'), invoke('getFilters'), getBoardIdFromPath()])
-            .then(([boardData, filterData, pathBoardId]) => {
+        Promise.all([invoke('getBoards'), invoke('getFilters'), invoke('getFocusAreaField'), getBoardIdFromPath()])
+            .then(([boardData, filterData, focusField, pathBoardId]) => {
                 setBoards(boardData);
                 setFilters(filterData);
+                setFocusAreaField(focusField ?? null);
                 const board = (pathBoardId && boardData.find(b => b.id === pathBoardId))
                     ?? boardData[0]
                     ?? null;
@@ -705,14 +728,29 @@ function App() {
     }, [selectedBoard]);
 
     useEffect(() => {
-        if (!selectedFilter) return;
+        if (!selectedFilter || focusAreaField === undefined) return;
         setEpics(null);
-        invoke('getEpics', { filterId: selectedFilter })
+        invoke('getEpics', {
+            filterId: selectedFilter,
+            focusAreaFieldId: focusAreaField?.fieldId ?? null,
+        })
             .then(setEpics)
             .catch(err => setError(err.message ?? 'Failed to load epics'));
-    }, [selectedFilter]);
+    }, [selectedFilter, focusAreaField]);
 
     if (error) return <div>Error: {error}</div>;
+
+    // Derive tabs from unique non-null focus area values seen in the loaded epics.
+    const focusAreaOptions = epics
+        ? [...new Set(epics.map(e => e.focusArea).filter(Boolean))].sort()
+        : [];
+    const tabs = focusAreaField && focusAreaOptions.length
+        ? [{ id: 'all', label: 'All' }, ...focusAreaOptions.map(v => ({ id: v, label: v }))]
+        : null;
+
+    const visibleEpics = epics && tabs
+        ? (selectedTab === 'all' ? epics : epics.filter(e => e.focusArea === selectedTab))
+        : epics;
 
     return (
         <div style={{ padding: 16, fontFamily: 'sans-serif', width: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
@@ -733,9 +771,30 @@ function App() {
                 </select>
             </div>
 
-            {!sprints || !epics
+            {tabs && (
+                <div style={tabBarStyle}>
+                    {tabs.map(tab => (
+                        <button
+                            key={tab.id}
+                            style={tabStyle(selectedTab === tab.id)}
+                            onClick={() => setSelectedTab(tab.id)}
+                        >
+                            {tab.label}
+                            {epics && (
+                                <span style={{ marginLeft: 5, fontSize: 11, color: '#888' }}>
+                                    ({tab.id === 'all'
+                                        ? epics.length
+                                        : epics.filter(e => e.focusArea === tab.id).length})
+                                </span>
+                            )}
+                        </button>
+                    ))}
+                </div>
+            )}
+
+            {!sprints || !visibleEpics
                 ? <GridSkeleton />
-                : <PlanningGrid epics={epics} sprints={sprints} />
+                : <PlanningGrid epics={visibleEpics} sprints={sprints} />
             }
         </div>
     );

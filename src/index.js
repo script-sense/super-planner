@@ -1,6 +1,8 @@
 import Resolver from '@forge/resolver';
 import api, { route } from '@forge/api';
 
+const FOCUS_AREA_FIELD_NAME = 'Focus Area';
+
 const resolver = new Resolver();
 
 // Fetch all boards the current user has access to.
@@ -63,6 +65,21 @@ resolver.define('getSprints', async (req) => {
     }));
 });
 
+// Discover the Focus Area custom field by name.
+// Returns { fieldId } or null if the field doesn't exist.
+// Options are derived client-side from the values present in epics (avoids manage:jira-configuration scope).
+resolver.define('getFocusAreaField', async () => {
+    const fieldsRes = await api.asUser().requestJira(route`/rest/api/3/field`);
+    if (!fieldsRes.ok) {
+        const text = await fieldsRes.text();
+        throw new Error(`Jira API error ${fieldsRes.status}: ${text}`);
+    }
+    const fields = await fieldsRes.json();
+    const field = fields.find(f => f.name === FOCUS_AREA_FIELD_NAME && f.custom);
+    if (!field) return null;
+    return { fieldId: field.id };
+});
+
 // Fetch all saved filters the current user has access to.
 resolver.define('getFilters', async () => {
     const response = await api
@@ -86,8 +103,12 @@ resolver.define('getFilters', async () => {
 
 // Fetch all non-Done epics matching the given saved filter.
 // Column placement comes from the Jira sprint field; row from the Jira priority field.
+// Pass focusAreaFieldId to also return each epic's Focus Area value.
 resolver.define('getEpics', async (req) => {
-    const { filterId } = req.payload;
+    const { filterId, focusAreaFieldId } = req.payload;
+
+    const fields = ['summary', 'priority', 'status', 'customfield_10020'];
+    if (focusAreaFieldId) fields.push(focusAreaFieldId);
 
     const response = await api
         .asUser()
@@ -96,7 +117,7 @@ resolver.define('getEpics', async (req) => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 jql: `filter = ${filterId} AND issuetype = Epic AND statusCategory != Done ORDER BY created DESC`,
-                fields: ['summary', 'priority', 'status', 'customfield_10020'],
+                fields,
                 maxResults: 200,
             }),
         });
@@ -113,12 +134,16 @@ resolver.define('getEpics', async (req) => {
         // or fall back to the last one if none is active.
         const sprints = issue.fields.customfield_10020 ?? [];
         const activeSprint = sprints.find(s => s.state === 'active') ?? sprints[sprints.length - 1] ?? null;
+        const focusArea = focusAreaFieldId
+            ? (issue.fields[focusAreaFieldId]?.value ?? null)
+            : null;
         return {
             key: issue.key,
             summary: issue.fields.summary,
             priority: issue.fields.priority?.name ?? null,
             // sprintId from the actual Jira sprint field — source of truth for column placement
             sprintId: activeSprint ? String(activeSprint.id) : null,
+            focusArea,
         };
     });
 });
