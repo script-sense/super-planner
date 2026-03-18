@@ -261,8 +261,8 @@ const monthCellStyle = (extra) => ({
 
 const dayCellStyle = {
     ...calBase,
-    padding: '2px 4px',
-    fontSize: 11,
+    padding: '3px 0',
+    fontSize: 12,
     color: '#888',
     background: '#f4f5f7',
     borderBottom: '1px solid #ccc',
@@ -304,8 +304,7 @@ function DroppableCell({ id, children, gridRow, gridColumn }) {
 }
 
 function GridSkeleton() {
-    // Show 28 placeholder day columns while loading (approx 4 weeks)
-    const N = 28;
+    const N = 28; // ~4 weeks of placeholder columns
     return (
         <>
             <style>{`
@@ -314,44 +313,36 @@ function GridSkeleton() {
                     100% { background-position: -200% 0; }
                 }
             `}</style>
-            <div style={{
-                display: 'grid',
-                gridTemplateColumns: `120px repeat(${N}, minmax(28px, 1fr)) minmax(140px, 1fr)`,
-                border: '1px solid #ccc',
-                borderRadius: 4,
-                overflowX: 'auto',
-                opacity: 0.6,
-            }}>
-                {/* Corner */}
-                <div style={cornerStyle} />
-                {/* Quarter row */}
-                <div style={{ ...quarterCellStyle(), gridColumn: `2 / span ${N}` }} />
-                <div style={quarterCellStyle({ gridColumn: N + 2 })} />
-                {/* Month row */}
-                <div style={{ ...monthCellStyle(), gridColumn: `2 / span ${N}` }}>
-                    <div style={{ height: 12, background: '#d8d8d8', borderRadius: 3, margin: '2px 20px' }} />
-                </div>
-                <div style={monthCellStyle({ gridColumn: N + 2 })} />
-                {/* Day row */}
-                {Array.from({ length: N }, (_, i) => (
-                    <div key={i} style={{ ...dayCellStyle, gridColumn: i + 2 }} />
-                ))}
-                <div style={{ ...dayCellStyle, gridColumn: N + 2 }} />
-                {/* Sprint name row */}
-                <div style={{ ...sprintCellStyle(false), gridColumn: `2 / span ${N}` }}>
-                    <div style={{ height: 13, background: '#d8d8d8', borderRadius: 3, margin: '2px 30px' }} />
-                </div>
-                <div style={{ ...sprintCellStyle(false), gridColumn: N + 2 }}>Backlog</div>
-                {/* Data rows */}
-                {ROWS.map((row, ri) => (
-                    <React.Fragment key={row.key}>
-                        <div style={{ ...rowLabelStyle(row), gridRow: ri + 5, gridColumn: 1 }}>{row.label}</div>
-                        <div style={{ ...cellStyle(false), gridRow: ri + 5, gridColumn: `2 / span ${N}` }}>
-                            {ri === 0 && <div style={skeletonStyle} />}
+            <div style={{ display: 'flex', border: '1px solid #ccc', borderRadius: 4, opacity: 0.6 }}>
+                <div style={{ overflowX: 'auto', flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: `120px repeat(${N}, ${DAY_COL_WIDTH}px)` }}>
+                        <div style={cornerStyle} />
+                        <div style={{ ...quarterCellStyle(), gridColumn: `2 / span ${N}` }} />
+                        <div style={{ ...monthCellStyle(), gridColumn: `2 / span ${N}` }}>
+                            <div style={{ height: 12, background: '#d8d8d8', borderRadius: 3, margin: '2px 20px' }} />
                         </div>
-                        <div style={{ ...cellStyle(false), gridRow: ri + 5, gridColumn: N + 2 }} />
-                    </React.Fragment>
-                ))}
+                        {Array.from({ length: N }, (_, i) => (
+                            <div key={i} style={{ ...dayCellStyle, gridColumn: i + 2 }} />
+                        ))}
+                        <div style={{ ...sprintCellStyle(false), gridColumn: `2 / span ${N}` }}>
+                            <div style={{ height: 13, background: '#d8d8d8', borderRadius: 3, margin: '2px 30px' }} />
+                        </div>
+                        {ROWS.map((row, ri) => (
+                            <React.Fragment key={row.key}>
+                                <div style={{ ...rowLabelStyle(row), gridRow: ri + 5, gridColumn: 1 }}>{row.label}</div>
+                                <div style={{ ...cellStyle(false), gridRow: ri + 5, gridColumn: `2 / span ${N}` }}>
+                                    {ri === 0 && <div style={skeletonStyle} />}
+                                </div>
+                            </React.Fragment>
+                        ))}
+                    </div>
+                </div>
+                <div style={{ width: 180, flexShrink: 0, borderLeft: '2px solid #ccc' }}>
+                    <div style={sprintCellStyle(false, { borderRight: 'none' })}>Backlog</div>
+                    {ROWS.map(row => (
+                        <div key={row.key} style={{ ...cellStyle(false), minHeight: 80 }} />
+                    ))}
+                </div>
             </div>
         </>
     );
@@ -412,29 +403,39 @@ function EpicCard({ epic, isDragOverlay, row }) {
     );
 }
 
+const DAY_COL_WIDTH = 24; // px per day column
+
 function PlanningGrid({ epics, sprints }) {
     const [positions, setPositions] = useState({});
     const [activeEpic, setActiveEpic] = useState(null);
+    const scrollRef = useRef(null);
 
     const sensors = useSensors(
         useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
         useSensor(TouchSensor, { activationConstraint: { distance: 5 } }),
     );
 
-    // Build day-based calendar columns
     const days          = computeCalendarDays(sprints);
     const numDays       = days.length;
     const quarterGroups = computeQuarterGroups(days);
     const monthGroups   = computeMonthGroups(days);
 
-    // For each sprint: { startIdx, span } into the day columns
     const sprintSpans = {};
     for (const s of sprints) sprintSpans[s.id] = sprintDaySpan(s, days);
 
-    // Backlog is always the last column: col 1 = row label, cols 2…numDays+1 = days, col numDays+2 = backlog
-    const backlogCol = numDays + 2;
-
     const gridData = buildGridData(epics, sprints, positions);
+
+    // Scroll to active sprint on first render
+    useEffect(() => {
+        if (!scrollRef.current || !days.length) return;
+        const active = sprints.find(s => s.state === 'active');
+        if (!active) return;
+        const sp = sprintSpans[active.id];
+        if (!sp) return;
+        // 120px row label + days before active sprint
+        const offset = 120 + sp.startIdx * DAY_COL_WIDTH - 40;
+        scrollRef.current.scrollLeft = Math.max(0, offset);
+    }, [sprints, days.length]);
 
     function handleDragStart({ active }) {
         setActiveEpic(epics.find(e => e.key === active.id) ?? null);
@@ -457,7 +458,7 @@ function PlanningGrid({ epics, sprints }) {
             .catch(err => console.error('Failed to update priority:', err));
     }
 
-    const gridTemplateColumns = `120px repeat(${numDays}, minmax(28px, 1fr)) minmax(140px, 1fr)`;
+    const gridTemplateColumns = `120px repeat(${numDays}, ${DAY_COL_WIDTH}px)`;
 
     return (
         <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
@@ -467,107 +468,119 @@ function PlanningGrid({ epics, sprints }) {
                     100% { background-position: -200% 0; }
                 }
             `}</style>
-            <div style={{
-                display: 'grid',
-                gridTemplateColumns,
-                border: '1px solid #ccc',
-                borderRadius: 4,
-                overflowX: 'auto',
-            }}>
-                {/* Corner: spans all 4 header rows */}
-                <div style={cornerStyle} />
+            <div style={{ display: 'flex', border: '1px solid #ccc', borderRadius: 4 }}>
+                {/* Scrollable calendar grid */}
+                <div ref={scrollRef} style={{ overflowX: 'auto', flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns }}>
+                        {/* Corner: spans all 4 header rows */}
+                        <div style={cornerStyle} />
 
-                {/* Row 1 — Quarters */}
-                {quarterGroups.map((q, i) => (
-                    <div key={i} style={quarterCellStyle({
-                        gridRow: 1,
-                        gridColumn: `${q.startIdx + 2} / span ${q.span}`,
-                    })}>
-                        {q.label}
-                    </div>
-                ))}
-                <div style={quarterCellStyle({ gridRow: 1, gridColumn: backlogCol })} />
-
-                {/* Row 2 — Months */}
-                {monthGroups.map((m, i) => (
-                    <div key={i} style={monthCellStyle({
-                        gridRow: 2,
-                        gridColumn: `${m.startIdx + 2} / span ${m.span}`,
-                    })}>
-                        {m.label}
-                    </div>
-                ))}
-                <div style={monthCellStyle({ gridRow: 2, gridColumn: backlogCol })} />
-
-                {/* Row 3 — Day ticks */}
-                {days.map((d, i) => {
-                    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-                    return (
-                        <div key={i} style={{
-                            ...dayCellStyle,
-                            gridRow: 3,
-                            gridColumn: i + 2,
-                            background: isWeekend ? '#e8e9ec' : '#f4f5f7',
-                            color: isWeekend ? '#aaa' : '#888',
-                        }}>
-                            {d.getDate()}
-                        </div>
-                    );
-                })}
-                <div style={{ ...dayCellStyle, gridRow: 3, gridColumn: backlogCol }} />
-
-                {/* Row 4 — Sprint names spanning their weeks */}
-                {sprints.map(s => {
-                    const sp = sprintSpans[s.id];
-                    return (
-                        <div key={s.id} style={sprintCellStyle(s.state === 'active', {
-                            gridRow: 4,
-                            gridColumn: sp ? `${sp.startIdx + 2} / span ${sp.span}` : backlogCol,
-                        })}>
-                            {s.name}
-                            {s.state === 'active' && (
-                                <span style={{ fontSize: 10, fontWeight: 'normal', marginLeft: 4 }}>· active</span>
-                            )}
-                        </div>
-                    );
-                })}
-                <div style={sprintCellStyle(false, { gridRow: 4, gridColumn: backlogCol })}>Backlog</div>
-
-                {/* Data rows */}
-                {ROWS.map((row, ri) => {
-                    const dataRow = ri + 5;
-                    return (
-                        <React.Fragment key={row.key}>
-                            <div style={{ ...rowLabelStyle(row), gridRow: dataRow, gridColumn: 1 }}>
-                                {row.label}
+                        {/* Row 1 — Quarters */}
+                        {quarterGroups.map((q, i) => (
+                            <div key={i} style={quarterCellStyle({
+                                gridRow: 1,
+                                gridColumn: `${q.startIdx + 2} / span ${q.span}`,
+                            })}>
+                                {q.label}
                             </div>
-                            {sprints.map(s => {
-                                const sp = sprintSpans[s.id];
-                                return (
-                                    <DroppableCell
-                                        key={s.id}
-                                        id={`${row.key}|${s.id}`}
-                                        gridRow={dataRow}
-                                        gridColumn={sp ? `${sp.startIdx + 2} / span ${sp.span}` : String(backlogCol)}
-                                    >
-                                        {(gridData[row.key][s.id] ?? []).map(epic => (
-                                            <EpicCard key={epic.key} epic={epic} row={row} />
-                                        ))}
-                                    </DroppableCell>
-                                );
-                            })}
-                            <DroppableCell
-                                id={`${row.key}|backlog`}
-                                gridRow={dataRow}
-                                gridColumn={String(backlogCol)}
-                            >
-                                {gridData[row.key].backlog.map(epic => (
-                                    <EpicCard key={epic.key} epic={epic} row={row} />
-                                ))}
-                            </DroppableCell>
-                        </React.Fragment>
-                    );
-                })}
+                        ))}
+
+                        {/* Row 2 — Months */}
+                        {monthGroups.map((m, i) => (
+                            <div key={i} style={monthCellStyle({
+                                gridRow: 2,
+                                gridColumn: `${m.startIdx + 2} / span ${m.span}`,
+                            })}>
+                                {m.label}
+                            </div>
+                        ))}
+
+                        {/* Row 3 — Day ticks */}
+                        {days.map((d, i) => {
+                            const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+                            return (
+                                <div key={i} style={{
+                                    ...dayCellStyle,
+                                    gridRow: 3,
+                                    gridColumn: i + 2,
+                                    background: isWeekend ? '#e8e9ec' : '#f4f5f7',
+                                    color: isWeekend ? '#aaa' : '#888',
+                                }}>
+                                    {d.getDate()}
+                                </div>
+                            );
+                        })}
+
+                        {/* Row 4 — Sprint names */}
+                        {sprints.map(s => {
+                            const sp = sprintSpans[s.id];
+                            return (
+                                <div key={s.id} style={sprintCellStyle(s.state === 'active', {
+                                    gridRow: 4,
+                                    gridColumn: sp ? `${sp.startIdx + 2} / span ${sp.span}` : '2',
+                                })}>
+                                    {s.name}
+                                    {s.state === 'active' && (
+                                        <span style={{ fontSize: 10, fontWeight: 'normal', marginLeft: 4 }}>· active</span>
+                                    )}
+                                </div>
+                            );
+                        })}
+
+                        {/* Data rows */}
+                        {ROWS.map((row, ri) => {
+                            const dataRow = ri + 5;
+                            return (
+                                <React.Fragment key={row.key}>
+                                    <div style={{ ...rowLabelStyle(row), gridRow: dataRow, gridColumn: 1 }}>
+                                        {row.label}
+                                    </div>
+                                    {sprints.map(s => {
+                                        const sp = sprintSpans[s.id];
+                                        return (
+                                            <DroppableCell
+                                                key={s.id}
+                                                id={`${row.key}|${s.id}`}
+                                                gridRow={dataRow}
+                                                gridColumn={sp ? `${sp.startIdx + 2} / span ${sp.span}` : '2'}
+                                            >
+                                                {(gridData[row.key][s.id] ?? []).map(epic => (
+                                                    <EpicCard key={epic.key} epic={epic} row={row} />
+                                                ))}
+                                            </DroppableCell>
+                                        );
+                                    })}
+                                </React.Fragment>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {/* Fixed backlog panel */}
+                <div style={{
+                    width: 180,
+                    flexShrink: 0,
+                    borderLeft: '2px solid #ccc',
+                    display: 'grid',
+                    gridTemplateRows: 'auto auto auto auto' + ROWS.map(() => ' auto').join(''),
+                }}>
+                    <div style={quarterCellStyle({ borderRight: 'none' })} />
+                    <div style={monthCellStyle({ borderRight: 'none' })} />
+                    <div style={{ ...dayCellStyle, borderRight: 'none' }} />
+                    <div style={sprintCellStyle(false, { borderRight: 'none' })}>Backlog</div>
+                    {ROWS.map((row, ri) => (
+                        <DroppableCell
+                            key={row.key}
+                            id={`${row.key}|backlog`}
+                            gridRow={ri + 5}
+                            gridColumn='1'
+                        >
+                            {gridData[row.key].backlog.map(epic => (
+                                <EpicCard key={epic.key} epic={epic} row={row} />
+                            ))}
+                        </DroppableCell>
+                    ))}
+                </div>
             </div>
 
             <DragOverlay>

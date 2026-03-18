@@ -27,22 +27,30 @@ resolver.define('getBoards', async () => {
         }));
 });
 
-// Fetch active and future sprints from the selected board, in chronological order.
+// Fetch sprints from the selected board: last 4 closed + all active + all future.
 resolver.define('getSprints', async (req) => {
     const { boardId } = req.payload;
 
-    const response = await api
-        .asUser()
-        .requestJira(route`/rest/agile/1.0/board/${boardId}/sprint?state=active,future`);
+    const [activeRes, closedRes] = await Promise.all([
+        api.asUser().requestJira(route`/rest/agile/1.0/board/${boardId}/sprint?state=active,future&maxResults=50`),
+        api.asUser().requestJira(route`/rest/agile/1.0/board/${boardId}/sprint?state=closed&maxResults=4`),
+    ]);
 
-    if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`Jira API error ${response.status}: ${text}`);
+    if (!activeRes.ok) {
+        const text = await activeRes.text();
+        throw new Error(`Jira API error ${activeRes.status}: ${text}`);
+    }
+    if (!closedRes.ok) {
+        const text = await closedRes.text();
+        throw new Error(`Jira API error ${closedRes.status}: ${text}`);
     }
 
-    const data = await response.json();
+    const activeData = await activeRes.json();
+    const closedData = await closedRes.json();
 
-    const sprints = (data.values ?? []).sort((a, b) =>
+    const all = [...(closedData.values ?? []), ...(activeData.values ?? [])];
+
+    const sprints = all.sort((a, b) =>
         new Date(a.startDate ?? 0) - new Date(b.startDate ?? 0)
     );
 
