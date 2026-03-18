@@ -29,3 +29,4 @@ permissions:
     - write:jira-work
     - write:sprint:jira-software
     - write:board-scope:jira-software
+    - manage:jira-configuration

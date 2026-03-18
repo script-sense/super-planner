@@ -704,6 +704,146 @@ async function navigateToBoard(boardId) {
     router.navigate(`${base}/${boardId}`);
 }
 
+const settingsPanelStyle = {
+    background: '#fff',
+    border: '1px solid #ccc',
+    borderRadius: 4,
+    padding: '10px 14px',
+    marginTop: 4,
+    minWidth: 260,
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+    position: 'absolute',
+    zIndex: 10,
+};
+
+const settingsOptionRowStyle = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '4px 0',
+    borderBottom: '1px solid #f0f0f0',
+    fontSize: 13,
+};
+
+function FocusAreaSettings({ focusAreaField, epics, onFieldChange }) {
+    const [open, setOpen] = useState(false);
+    const [newValue, setNewValue] = useState('');
+    const [adding, setAdding] = useState(false);
+    const [deletingId, setDeletingId] = useState(null);
+    const [localError, setLocalError] = useState(null);
+    const wrapperRef = useRef(null);
+
+    // Close panel on outside click
+    useEffect(() => {
+        if (!open) return;
+        function handleClick(e) {
+            if (wrapperRef.current && !wrapperRef.current.contains(e.target)) setOpen(false);
+        }
+        document.addEventListener('mousedown', handleClick);
+        return () => document.removeEventListener('mousedown', handleClick);
+    }, [open]);
+
+    function handleAdd() {
+        const value = newValue.trim();
+        if (!value) return;
+        setAdding(true);
+        setLocalError(null);
+        invoke('addFocusAreaOption', {
+            fieldId: focusAreaField.fieldId,
+            contextId: focusAreaField.contextId,
+            value,
+        })
+            .then(created => {
+                onFieldChange(prev => ({
+                    ...prev,
+                    options: [...prev.options, created],
+                }));
+                setNewValue('');
+            })
+            .catch(err => setLocalError(err.message ?? 'Failed to add option'))
+            .finally(() => setAdding(false));
+    }
+
+    function handleDelete(opt) {
+        const inUse = (epics ?? []).filter(e => e.focusArea === opt.value).length;
+        if (inUse > 0) {
+            const ok = window.confirm(
+                `"${opt.value}" is used by ${inUse} epic${inUse > 1 ? 's' : ''}. Delete anyway?`
+            );
+            if (!ok) return;
+        }
+        setDeletingId(opt.id);
+        setLocalError(null);
+        invoke('deleteFocusAreaOption', {
+            fieldId: focusAreaField.fieldId,
+            contextId: focusAreaField.contextId,
+            optionId: opt.id,
+        })
+            .then(() => {
+                onFieldChange(prev => ({
+                    ...prev,
+                    options: prev.options.filter(o => o.id !== opt.id),
+                }));
+            })
+            .catch(err => setLocalError(err.message ?? 'Failed to delete option'))
+            .finally(() => setDeletingId(null));
+    }
+
+    return (
+        <div ref={wrapperRef} style={{ position: 'relative', alignSelf: 'flex-end', marginBottom: 2 }}>
+            <button
+                style={{ ...toggleButtonStyle, fontSize: 13, padding: '4px 8px' }}
+                onClick={() => setOpen(o => !o)}
+                title="Manage Focus Area options"
+            >
+                ⚙ Focus Areas
+            </button>
+            {open && (
+                <div style={settingsPanelStyle}>
+                    <div style={{ fontWeight: 'bold', fontSize: 13, marginBottom: 8 }}>Focus Area Options</div>
+                    {focusAreaField.options.length === 0 && (
+                        <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>No options yet.</div>
+                    )}
+                    {focusAreaField.options.map(opt => {
+                        const inUse = (epics ?? []).filter(e => e.focusArea === opt.value).length;
+                        return (
+                            <div key={opt.id} style={settingsOptionRowStyle}>
+                                <span>{opt.value}{inUse > 0 && <span style={{ marginLeft: 6, fontSize: 11, color: '#888' }}>({inUse})</span>}</span>
+                                <button
+                                    onClick={() => handleDelete(opt)}
+                                    disabled={!!deletingId}
+                                    style={{ background: 'none', border: 'none', color: '#c9372c', cursor: 'pointer', fontSize: 13, padding: '0 4px' }}
+                                    title="Delete option"
+                                >
+                                    {deletingId === opt.id ? '…' : '✕'}
+                                </button>
+                            </div>
+                        );
+                    })}
+                    <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+                        <input
+                            type="text"
+                            value={newValue}
+                            onChange={e => setNewValue(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && handleAdd()}
+                            placeholder="New option…"
+                            style={{ flex: 1, fontSize: 13, padding: '3px 6px', border: '1px solid #ccc', borderRadius: 3 }}
+                        />
+                        <button
+                            onClick={handleAdd}
+                            disabled={adding || !newValue.trim()}
+                            style={{ ...toggleButtonStyle, padding: '3px 10px' }}
+                        >
+                            {adding ? '…' : 'Add'}
+                        </button>
+                    </div>
+                    {localError && <div style={{ marginTop: 6, fontSize: 12, color: '#c9372c' }}>{localError}</div>}
+                </div>
+            )}
+        </div>
+    );
+}
+
 const tabBarStyle = {
     display: 'flex',
     gap: 4,
@@ -766,23 +906,23 @@ function App() {
         setSelectedFilter(findMatchingFilter(filters, board));
     }, [selectedBoard]);
 
+    // Only re-fetch epics when the field ID or filter changes — not when options list changes.
+    const focusAreaFieldId = focusAreaField?.fieldId ?? null;
     useEffect(() => {
         if (!selectedFilter || focusAreaField === undefined) return;
         setEpics(null);
-        invoke('getEpics', {
-            filterId: selectedFilter,
-            focusAreaFieldId: focusAreaField?.fieldId ?? null,
-        })
+        invoke('getEpics', { filterId: selectedFilter, focusAreaFieldId })
             .then(setEpics)
             .catch(err => setError(err.message ?? 'Failed to load epics'));
-    }, [selectedFilter, focusAreaField]);
+    }, [selectedFilter, focusAreaFieldId]);
 
     if (error) return <div>Error: {error}</div>;
 
-    // Derive tabs from unique non-null focus area values seen in the loaded epics.
-    const focusAreaOptions = epics
-        ? [...new Set(epics.map(e => e.focusArea).filter(Boolean))].sort()
-        : [];
+    // Use authoritative options from the field definition; fall back to values in epics.
+    const focusAreaOptions = focusAreaField?.options?.length
+        ? focusAreaField.options.map(o => o.value)
+        : (epics ? [...new Set(epics.map(e => e.focusArea).filter(Boolean))].sort() : []);
+
     const tabs = focusAreaField && focusAreaOptions.length
         ? [{ id: 'all', label: 'All' }, ...focusAreaOptions.map(v => ({ id: v, label: v }))]
         : null;
@@ -810,24 +950,35 @@ function App() {
                 </select>
             </div>
 
-            {tabs && (
-                <div style={tabBarStyle}>
-                    {tabs.map(tab => (
-                        <button
-                            key={tab.id}
-                            style={tabStyle(selectedTab === tab.id)}
-                            onClick={() => setSelectedTab(tab.id)}
-                        >
-                            {tab.label}
-                            {epics && (
-                                <span style={{ marginLeft: 5, fontSize: 11, color: '#888' }}>
-                                    ({tab.id === 'all'
-                                        ? epics.length
-                                        : epics.filter(e => e.focusArea === tab.id).length})
-                                </span>
-                            )}
-                        </button>
-                    ))}
+            {focusAreaField && (
+                <div style={{ marginBottom: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
+                        {tabs && (
+                            <div style={tabBarStyle}>
+                                {tabs.map(tab => (
+                                    <button
+                                        key={tab.id}
+                                        style={tabStyle(selectedTab === tab.id)}
+                                        onClick={() => setSelectedTab(tab.id)}
+                                    >
+                                        {tab.label}
+                                        {epics && (
+                                            <span style={{ marginLeft: 5, fontSize: 11, color: '#888' }}>
+                                                ({tab.id === 'all'
+                                                    ? epics.length
+                                                    : epics.filter(e => e.focusArea === tab.id).length})
+                                            </span>
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                        <FocusAreaSettings
+                            focusAreaField={focusAreaField}
+                            epics={epics}
+                            onFieldChange={setFocusAreaField}
+                        />
+                    </div>
                 </div>
             )}
 

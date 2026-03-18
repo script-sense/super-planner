@@ -65,9 +65,8 @@ resolver.define('getSprints', async (req) => {
     }));
 });
 
-// Discover the Focus Area custom field by name.
-// Returns { fieldId } or null if the field doesn't exist.
-// Options are derived client-side from the values present in epics (avoids manage:jira-configuration scope).
+// Discover the Focus Area custom field by name, then fetch its context and all options.
+// Returns { fieldId, contextId, options: [{ id, value }] } or null if not found.
 resolver.define('getFocusAreaField', async () => {
     const fieldsRes = await api.asUser().requestJira(route`/rest/api/3/field`);
     if (!fieldsRes.ok) {
@@ -77,7 +76,70 @@ resolver.define('getFocusAreaField', async () => {
     const fields = await fieldsRes.json();
     const field = fields.find(f => f.name === FOCUS_AREA_FIELD_NAME && f.custom);
     if (!field) return null;
-    return { fieldId: field.id };
+
+    const fieldId = field.id;
+
+    const ctxRes = await api.asUser().requestJira(route`/rest/api/3/field/${fieldId}/context?maxResults=1`);
+    if (!ctxRes.ok) {
+        const text = await ctxRes.text();
+        throw new Error(`Jira API error ${ctxRes.status}: ${text}`);
+    }
+    const ctxData = await ctxRes.json();
+    const context = ctxData.values?.[0];
+    if (!context) return { fieldId, contextId: null, options: [] };
+
+    const contextId = context.id;
+
+    const optRes = await api.asUser().requestJira(route`/rest/api/3/field/${fieldId}/context/${contextId}/option?maxResults=100`);
+    if (!optRes.ok) {
+        const text = await optRes.text();
+        throw new Error(`Jira API error ${optRes.status}: ${text}`);
+    }
+    const optData = await optRes.json();
+    return {
+        fieldId,
+        contextId,
+        options: (optData.values ?? []).map(o => ({ id: o.id, value: o.value })),
+    };
+});
+
+// Add a new option to the Focus Area field context.
+// Returns the created option { id, value }.
+resolver.define('addFocusAreaOption', async (req) => {
+    const { fieldId, contextId, value } = req.payload;
+
+    const response = await api
+        .asUser()
+        .requestJira(route`/rest/api/3/field/${fieldId}/context/${contextId}/option`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ options: [{ value }] }),
+        });
+
+    if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Jira API error ${response.status}: ${text}`);
+    }
+
+    const data = await response.json();
+    const created = data.options?.[0];
+    return { id: created.id, value: created.value };
+});
+
+// Delete an option from the Focus Area field context.
+resolver.define('deleteFocusAreaOption', async (req) => {
+    const { fieldId, contextId, optionId } = req.payload;
+
+    const response = await api
+        .asUser()
+        .requestJira(route`/rest/api/3/field/${fieldId}/context/${contextId}/option/${optionId}`, {
+            method: 'DELETE',
+        });
+
+    if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Jira API error ${response.status}: ${text}`);
+    }
 });
 
 // Fetch all saved filters the current user has access to.
