@@ -23,6 +23,21 @@ const VALID_PRIORITY_KEYS = new Set(ROWS.map(r => r.key));
 
 const BACKLOG_COLUMN = { id: 'backlog', name: 'Backlog', state: 'backlog' };
 
+const THIS_YEAR = new Date().getFullYear();
+
+function formatSprintDates(startDate, endDate) {
+    if (!startDate && !endDate) return null;
+    const fmt = (iso) => {
+        const d = new Date(iso);
+        const opts = { month: 'short', day: 'numeric' };
+        if (d.getFullYear() !== THIS_YEAR) opts.year = 'numeric';
+        return d.toLocaleDateString(undefined, opts);
+    };
+    if (startDate && endDate) return `${fmt(startDate)} – ${fmt(endDate)}`;
+    if (startDate) return `From ${fmt(startDate)}`;
+    return `Until ${fmt(endDate)}`;
+}
+
 function getPriorityRow(priority) {
     if (priority && VALID_PRIORITY_KEYS.has(priority)) return priority;
     return 'Lowest';
@@ -322,16 +337,24 @@ function PlanningGrid({ epics, sprints }) {
         >
             <div style={gridStyle(columns.length)}>
                 <div style={headerCellStyle(false)} />
-                {columns.map(col => (
-                    <div key={col.id} style={headerCellStyle(col.state === 'active')}>
-                        {col.name}
-                        {col.state === 'active' && (
-                            <span style={{ display: 'block', fontSize: 10, color: '#0052cc', fontWeight: 'normal' }}>
-                                active
-                            </span>
-                        )}
-                    </div>
-                ))}
+                {columns.map(col => {
+                    const dateRange = formatSprintDates(col.startDate, col.endDate);
+                    return (
+                        <div key={col.id} style={headerCellStyle(col.state === 'active')}>
+                            {col.name}
+                            {col.state === 'active' && (
+                                <span style={{ display: 'block', fontSize: 10, color: '#0052cc', fontWeight: 'normal' }}>
+                                    active
+                                </span>
+                            )}
+                            {dateRange && (
+                                <span style={{ display: 'block', fontSize: 10, color: '#666', fontWeight: 'normal', marginTop: 2 }}>
+                                    {dateRange}
+                                </span>
+                            )}
+                        </div>
+                    );
+                })}
 
                 {ROWS.map(row => (
                     <React.Fragment key={row.key}>

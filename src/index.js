@@ -50,6 +50,8 @@ resolver.define('getSprints', async (req) => {
         id: s.id,
         name: s.name,
         state: s.state,
+        startDate: s.startDate ?? null,
+        endDate: s.endDate ?? null,
     }));
 });
 
