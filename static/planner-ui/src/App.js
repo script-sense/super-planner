@@ -25,40 +25,35 @@ const THIS_YEAR = new Date().getFullYear();
 
 // --- Calendar helpers ---
 
-// Return the Monday on or before a given date.
-function toMonday(date) {
+function startOfDay(date) {
     const d = new Date(date);
     d.setHours(0, 0, 0, 0);
-    const dow = d.getDay(); // 0=Sun
-    d.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1));
     return d;
 }
 
-// Build a list of Mondays covering all sprints' date ranges.
-function computeCalendarWeeks(sprints) {
+// Build a list of every calendar day covering all sprints' date ranges.
+function computeCalendarDays(sprints) {
     const dated = sprints.filter(s => s.startDate && s.endDate);
     if (!dated.length) return [];
-    const earliest = toMonday(new Date(Math.min(...dated.map(s => new Date(s.startDate)))));
-    const latest   = new Date(Math.max(...dated.map(s => new Date(s.endDate))));
-    const weeks = [];
+    const earliest = startOfDay(new Date(Math.min(...dated.map(s => new Date(s.startDate)))));
+    const latest   = startOfDay(new Date(Math.max(...dated.map(s => new Date(s.endDate)))));
+    const days = [];
     const cur = new Date(earliest);
     while (cur <= latest) {
-        weeks.push(new Date(cur));
-        cur.setDate(cur.getDate() + 7);
+        days.push(new Date(cur));
+        cur.setDate(cur.getDate() + 1);
     }
-    return weeks;
+    return days;
 }
 
-// For a sprint, find which week indices it overlaps and return { startIdx, span }.
-function sprintWeekSpan(sprint, weeks) {
-    if (!sprint.startDate || !sprint.endDate || !weeks.length) return null;
-    const s = new Date(sprint.startDate);
-    const e = new Date(sprint.endDate);
+// For a sprint, find which day indices it covers and return { startIdx, span }.
+function sprintDaySpan(sprint, days) {
+    if (!sprint.startDate || !sprint.endDate || !days.length) return null;
+    const s = startOfDay(new Date(sprint.startDate));
+    const e = startOfDay(new Date(sprint.endDate));
     let first = -1, last = -1;
-    for (let i = 0; i < weeks.length; i++) {
-        const wEnd = new Date(weeks[i]);
-        wEnd.setDate(wEnd.getDate() + 7);
-        if (weeks[i] < e && wEnd > s) {
+    for (let i = 0; i < days.length; i++) {
+        if (days[i] >= s && days[i] < e) {
             if (first === -1) first = i;
             last = i;
         }
@@ -67,19 +62,19 @@ function sprintWeekSpan(sprint, weeks) {
     return { startIdx: first, span: last - first + 1 };
 }
 
-// Group consecutive weeks by month → [{ label, startIdx, span }]
-function computeMonthGroups(weeks) {
-    if (!weeks.length) return [];
+// Group consecutive days by month → [{ label, startIdx, span }]
+function computeMonthGroups(days) {
+    if (!days.length) return [];
     const groups = [];
     let cur = null, startIdx = 0;
-    for (let i = 0; i < weeks.length; i++) {
-        const key = `${weeks[i].getFullYear()}-${weeks[i].getMonth()}`;
+    for (let i = 0; i < days.length; i++) {
+        const key = `${days[i].getFullYear()}-${days[i].getMonth()}`;
         if (key !== cur) {
-            if (cur !== null) groups.push({ label: monthLabel(weeks[startIdx]), startIdx, span: i - startIdx });
+            if (cur !== null) groups.push({ label: monthLabel(days[startIdx]), startIdx, span: i - startIdx });
             cur = key; startIdx = i;
         }
     }
-    if (cur !== null) groups.push({ label: monthLabel(weeks[startIdx]), startIdx, span: weeks.length - startIdx });
+    if (cur !== null) groups.push({ label: monthLabel(days[startIdx]), startIdx, span: days.length - startIdx });
     return groups;
 }
 
@@ -89,20 +84,20 @@ function monthLabel(d) {
     return d.toLocaleDateString(undefined, opts);
 }
 
-// Group consecutive weeks by quarter → [{ label, startIdx, span }]
-function computeQuarterGroups(weeks) {
-    if (!weeks.length) return [];
+// Group consecutive days by quarter → [{ label, startIdx, span }]
+function computeQuarterGroups(days) {
+    if (!days.length) return [];
     const groups = [];
     let cur = null, startIdx = 0;
-    for (let i = 0; i < weeks.length; i++) {
-        const q = Math.floor(weeks[i].getMonth() / 3);
-        const key = `${weeks[i].getFullYear()}-${q}`;
+    for (let i = 0; i < days.length; i++) {
+        const q = Math.floor(days[i].getMonth() / 3);
+        const key = `${days[i].getFullYear()}-${q}`;
         if (key !== cur) {
             if (cur !== null) groups.push({ label: `Q${Number(cur.split('-')[1]) + 1}`, startIdx, span: i - startIdx });
             cur = key; startIdx = i;
         }
     }
-    if (cur !== null) groups.push({ label: `Q${Number(cur.split('-')[1]) + 1}`, startIdx, span: weeks.length - startIdx });
+    if (cur !== null) groups.push({ label: `Q${Number(cur.split('-')[1]) + 1}`, startIdx, span: days.length - startIdx });
     return groups;
 }
 
@@ -307,8 +302,8 @@ function DroppableCell({ id, children, gridRow, gridColumn }) {
 }
 
 function GridSkeleton() {
-    // Show 8 placeholder week columns while loading
-    const N = 8;
+    // Show 28 placeholder day columns while loading (approx 4 weeks)
+    const N = 28;
     return (
         <>
             <style>{`
@@ -319,7 +314,7 @@ function GridSkeleton() {
             `}</style>
             <div style={{
                 display: 'grid',
-                gridTemplateColumns: `120px repeat(${N}, minmax(40px, 1fr)) minmax(140px, 1fr)`,
+                gridTemplateColumns: `120px repeat(${N}, minmax(28px, 1fr)) minmax(140px, 1fr)`,
                 border: '1px solid #ccc',
                 borderRadius: 4,
                 overflowX: 'auto',
@@ -424,18 +419,18 @@ function PlanningGrid({ epics, sprints }) {
         useSensor(TouchSensor, { activationConstraint: { distance: 5 } }),
     );
 
-    // Build week-based calendar columns
-    const weeks        = computeCalendarWeeks(sprints);
-    const numWeeks     = weeks.length;
-    const quarterGroups = computeQuarterGroups(weeks);
-    const monthGroups   = computeMonthGroups(weeks);
+    // Build day-based calendar columns
+    const days          = computeCalendarDays(sprints);
+    const numDays       = days.length;
+    const quarterGroups = computeQuarterGroups(days);
+    const monthGroups   = computeMonthGroups(days);
 
-    // For each sprint: { startIdx, span } into the week columns
+    // For each sprint: { startIdx, span } into the day columns
     const sprintSpans = {};
-    for (const s of sprints) sprintSpans[s.id] = sprintWeekSpan(s, weeks);
+    for (const s of sprints) sprintSpans[s.id] = sprintDaySpan(s, days);
 
-    // Backlog is always the last column: numWeeks + 2 (1-based, col 1 = row label)
-    const backlogCol = numWeeks + 2;
+    // Backlog is always the last column: col 1 = row label, cols 2…numDays+1 = days, col numDays+2 = backlog
+    const backlogCol = numDays + 2;
 
     const gridData = buildGridData(epics, sprints, positions);
 
@@ -460,7 +455,7 @@ function PlanningGrid({ epics, sprints }) {
             .catch(err => console.error('Failed to update priority:', err));
     }
 
-    const gridTemplateColumns = `120px repeat(${numWeeks}, minmax(40px, 1fr)) minmax(140px, 1fr)`;
+    const gridTemplateColumns = `120px repeat(${numDays}, minmax(28px, 1fr)) minmax(140px, 1fr)`;
 
     return (
         <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
@@ -502,12 +497,21 @@ function PlanningGrid({ epics, sprints }) {
                 ))}
                 <div style={monthCellStyle({ gridRow: 2, gridColumn: backlogCol })} />
 
-                {/* Row 3 — Week day ticks (Monday date of each week) */}
-                {weeks.map((w, i) => (
-                    <div key={i} style={{ ...dayCellStyle, gridRow: 3, gridColumn: i + 2 }}>
-                        {w.getDate()}
-                    </div>
-                ))}
+                {/* Row 3 — Day ticks */}
+                {days.map((d, i) => {
+                    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+                    return (
+                        <div key={i} style={{
+                            ...dayCellStyle,
+                            gridRow: 3,
+                            gridColumn: i + 2,
+                            background: isWeekend ? '#e8e9ec' : '#f4f5f7',
+                            color: isWeekend ? '#aaa' : '#888',
+                        }}>
+                            {d.getDate()}
+                        </div>
+                    );
+                })}
                 <div style={{ ...dayCellStyle, gridRow: 3, gridColumn: backlogCol }} />
 
                 {/* Row 4 — Sprint names spanning their weeks */}
