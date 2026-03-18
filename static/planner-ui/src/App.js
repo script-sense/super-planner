@@ -324,9 +324,7 @@ function GridSkeleton() {
                     100% { background-position: -200% 0; }
                 }
             `}</style>
-            <div style={{ border: '1px solid #ccc', borderRadius: 4, overflow: 'hidden', opacity: 0.6 }}>
-                <div style={{ overflowX: 'auto' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: `120px repeat(${N}, ${DAY_COL_WIDTH}px)` }}>
+            <div style={{ display: 'grid', gridTemplateColumns: `120px repeat(${N}, ${DAY_COL_WIDTH}px)`, border: '1px solid #ccc', borderRadius: 4, overflowX: 'auto', opacity: 0.6 }}>
                         <div style={cornerStyle} />
                         <div style={{ ...quarterCellStyle(), gridColumn: `2 / span ${N}` }} />
                         <div style={{ ...monthCellStyle(), gridColumn: `2 / span ${N}` }}>
@@ -346,8 +344,6 @@ function GridSkeleton() {
                                 </div>
                             </React.Fragment>
                         ))}
-                    </div>
-                </div>
             </div>
         </>
     );
@@ -508,10 +504,19 @@ function PlanningGrid({ epics, sprints }) {
             `}</style>
 
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                {/* Scrollable calendar grid */}
-                <div style={{ flex: 1, minWidth: 0, border: '1px solid #ccc', borderRadius: 4, overflow: 'hidden' }}>
-                    <div ref={scrollRef} style={{ overflowX: 'auto' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns }}>
+                {/* Scrollable calendar grid — scroll container IS the grid so sticky works */}
+                <div
+                    ref={scrollRef}
+                    style={{
+                        flex: 1,
+                        minWidth: 0,
+                        display: 'grid',
+                        gridTemplateColumns,
+                        overflowX: 'auto',
+                        border: '1px solid #ccc',
+                        borderRadius: 4,
+                    }}
+                >
                             <div style={cornerStyle} />
 
                             {/* Row 1 — Quarters */}
@@ -592,18 +597,14 @@ function PlanningGrid({ epics, sprints }) {
                                     </React.Fragment>
                                 );
                             })}
-                        </div>
-                    </div>
-
-                    {/* Backlog toggle — sits below the grid when panel is hidden */}
-                    {!showBacklog && (
-                        <div style={{ padding: '6px 10px', borderTop: '1px solid #eee', textAlign: 'right' }}>
-                            <button style={toggleButtonStyle} onClick={() => setShowBacklog(true)}>
-                                Backlog {backlogCount > 0 && `(${backlogCount})`} ▶
-                            </button>
-                        </div>
-                    )}
                 </div>
+
+                {/* Backlog toggle button — floats outside the grid when panel is hidden */}
+                {!showBacklog && (
+                    <button style={{ ...toggleButtonStyle, alignSelf: 'flex-start', marginTop: 4 }} onClick={() => setShowBacklog(true)}>
+                        Backlog {backlogCount > 0 && `(${backlogCount})`} ▶
+                    </button>
+                )}
 
                 {/* Collapsible backlog panel */}
                 {showBacklog && (
