@@ -352,4 +352,59 @@ resolver.define('rankEpic', async (req) => {
     }
 });
 
+// Fetch users assignable to an issue — used to populate the assignee picker in the modal.
+resolver.define('getAssignableUsers', async (req) => {
+    const { issueKey } = req.payload;
+    const response = await api.asUser().requestJira(
+        route`/rest/api/3/user/assignable/search?issueKey=${issueKey}&maxResults=50`
+    );
+    if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Jira API error ${response.status}: ${text}`);
+    }
+    const users = await response.json();
+    return (users ?? []).map(u => ({
+        accountId: u.accountId,
+        displayName: u.displayName,
+        avatarUrl: u.avatarUrls?.['24x24'] ?? null,
+    }));
+});
+
+// Set the assignee on any issue. Pass accountId = null to unassign.
+resolver.define('updateIssueAssignee', async (req) => {
+    const { issueKey, accountId } = req.payload;
+    const response = await api.asUser().requestJira(route`/rest/api/3/issue/${issueKey}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: { assignee: accountId ? { accountId } : null } }),
+    });
+    if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Jira API error ${response.status}: ${text}`);
+    }
+});
+
+// Transition an epic to Done. Fetches available transitions, finds the one that moves
+// to the Done status category, then executes it.
+resolver.define('transitionEpicDone', async (req) => {
+    const { epicKey } = req.payload;
+    const transRes = await api.asUser().requestJira(route`/rest/api/3/issue/${epicKey}/transitions`);
+    if (!transRes.ok) {
+        const text = await transRes.text();
+        throw new Error(`Jira API error ${transRes.status}: ${text}`);
+    }
+    const { transitions } = await transRes.json();
+    const done = transitions.find(t => t.to?.statusCategory?.key === 'done');
+    if (!done) throw new Error('No Done transition found for this epic');
+    const execRes = await api.asUser().requestJira(route`/rest/api/3/issue/${epicKey}/transitions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transition: { id: done.id } }),
+    });
+    if (!execRes.ok) {
+        const text = await execRes.text();
+        throw new Error(`Jira API error ${execRes.status}: ${text}`);
+    }
+});
+
 export const handler = resolver.getDefinitions();

@@ -188,20 +188,27 @@ async function fetchChildIssues(epicKey) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            jql: `issueType != Epic AND (parent = "${epicKey}" OR "Epic Link" = "${epicKey}") AND statusCategory != Done ORDER BY created DESC`,
-            fields: ['summary', 'status', 'assignee'],
-            maxResults: 50,
+            // Include Done issues — modal shows all tickets and uses them for the progress bar
+            jql: `issueType != Epic AND parent = "${epicKey}" ORDER BY created DESC`,
+            fields: ['summary', 'status', 'assignee', 'customfield_10020'],
+            maxResults: 100,
         }),
     });
     const data = await res.json();
-    return (data.issues ?? []).map(issue => ({
-        key: issue.key,
-        summary: issue.fields.summary,
-        statusCategory: issue.fields.status?.statusCategory?.name ?? null,
-        assignee: issue.fields.assignee
-            ? { displayName: issue.fields.assignee.displayName, avatarUrl: issue.fields.assignee.avatarUrls?.['16x16'] ?? null }
-            : null,
-    }));
+    return (data.issues ?? []).map(issue => {
+        const sprintList = issue.fields.customfield_10020 ?? [];
+        const sprint = sprintList.find(s => s.state === 'active') ?? sprintList[sprintList.length - 1] ?? null;
+        return {
+            key: issue.key,
+            summary: issue.fields.summary,
+            statusCategory: issue.fields.status?.statusCategory?.name ?? null,
+            assignee: issue.fields.assignee
+                ? { accountId: issue.fields.assignee.accountId, displayName: issue.fields.assignee.displayName, avatarUrl: issue.fields.assignee.avatarUrls?.['24x24'] ?? null }
+                : null,
+            sprintId: sprint ? String(sprint.id) : null,
+            sprintName: sprint?.name ?? null,
+        };
+    });
 }
 
 // --- Styles ---
@@ -429,14 +436,26 @@ function GridSkeleton() {
 }
 
 
-function EpicDetailModal({ epic, onClose }) {
+function EpicDetailModal({ epic, sprints, onClose, onEpicDone }) {
     const [children, setChildren] = useState(null);
     const [loading, setLoading] = useState(true);
     const [childError, setChildError] = useState(null);
+    const [assignableUsers, setAssignableUsers] = useState([]);
+    const [markingDone, setMarkingDone] = useState(false);
+    const [doneError, setDoneError] = useState(null);
+    // { key: issueKey, field: 'sprint' | 'assignee' } — which chip is being edited
+    const [editing, setEditing] = useState(null);
 
     useEffect(() => {
-        fetchChildIssues(epic.key)
-            .then(issues => { setChildren(issues); setLoading(false); })
+        Promise.all([
+            fetchChildIssues(epic.key),
+            invoke('getAssignableUsers', { issueKey: epic.key }),
+        ])
+            .then(([issues, users]) => {
+                setChildren(issues);
+                setAssignableUsers(users ?? []);
+                setLoading(false);
+            })
             .catch(err => { setChildError(err.message ?? 'Failed to load'); setLoading(false); });
     }, [epic.key]);
 
@@ -445,6 +464,152 @@ function EpicDetailModal({ epic, onClose }) {
         document.addEventListener('keydown', onKey);
         return () => document.removeEventListener('keydown', onKey);
     }, [onClose]);
+
+    const total = children?.length ?? 0;
+    const doneCount = children?.filter(c => c.statusCategory === 'Done').length ?? 0;
+    const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
+
+    // Only show active + future sprints in pickers
+    const activeSprints = sprints.filter(s => s.state !== 'closed');
+
+    function updateChildSprint(childKey, sprintId) {
+        const id = sprintId || null;
+        setEditing(null);
+        invoke('assignEpicToSprint', { epicKey: childKey, sprintId: id })
+            .then(() => {
+                const sprint = activeSprints.find(s => String(s.id) === String(sprintId));
+                setChildren(prev => prev.map(c =>
+                    c.key === childKey ? { ...c, sprintId: id, sprintName: sprint?.name ?? null } : c
+                ));
+            })
+            .catch(err => console.error('[SuperPlanner] Sprint update failed:', err));
+    }
+
+    function updateChildAssignee(childKey, accountId) {
+        const id = accountId || null;
+        setEditing(null);
+        invoke('updateIssueAssignee', { issueKey: childKey, accountId: id })
+            .then(() => {
+                const user = assignableUsers.find(u => u.accountId === accountId);
+                setChildren(prev => prev.map(c =>
+                    c.key === childKey ? { ...c, assignee: user ? { accountId: user.accountId, displayName: user.displayName, avatarUrl: user.avatarUrl } : null } : c
+                ));
+            })
+            .catch(err => console.error('[SuperPlanner] Assignee update failed:', err));
+    }
+
+    function handleMarkDone() {
+        setMarkingDone(true);
+        setDoneError(null);
+        invoke('transitionEpicDone', { epicKey: epic.key })
+            .then(() => { onEpicDone(epic.key); onClose(); })
+            .catch(err => { setDoneError(err.message ?? 'Failed to mark as done'); setMarkingDone(false); });
+    }
+
+    const chipBase = {
+        fontSize: 11, padding: '2px 7px', borderRadius: 10,
+        cursor: 'pointer', userSelect: 'none', display: 'inline-flex', alignItems: 'center', gap: 3,
+        border: '1px solid transparent',
+    };
+    const chipFilled = { ...chipBase, background: '#F4F5F7', color: '#172B4D', borderColor: '#DFE1E6' };
+    const chipEmpty  = { ...chipBase, background: 'none', color: '#97A0AF', borderColor: '#DFE1E6', borderStyle: 'dashed' };
+    const inlineSelect = {
+        fontSize: 11, padding: '2px 4px', border: '1px solid #4c9aff',
+        borderRadius: 3, color: '#172B4D', background: '#fff', cursor: 'pointer', outline: 'none',
+    };
+
+    function renderChildIssue(issue) {
+        const isEditingSprint   = editing?.key === issue.key && editing?.field === 'sprint';
+        const isEditingAssignee = editing?.key === issue.key && editing?.field === 'assignee';
+
+        return (
+            <div key={issue.key} style={{ padding: '10px 0', borderBottom: '1px solid #F4F5F7' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                    {/* Avatar — click to edit assignee */}
+                    <div
+                        title={issue.assignee ? issue.assignee.displayName : 'Unassigned — click to assign'}
+                        onClick={() => setEditing({ key: issue.key, field: 'assignee' })}
+                        style={{ cursor: 'pointer', flexShrink: 0, marginTop: 1 }}
+                    >
+                        {issue.assignee
+                            ? <img src={issue.assignee.avatarUrl} style={{ width: 22, height: 22, borderRadius: '50%', display: 'block' }} alt={issue.assignee.displayName} />
+                            : <span style={{ width: 22, height: 22, borderRadius: '50%', background: '#DFE1E6', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: '#97A0AF' }}>?</span>
+                        }
+                    </div>
+
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        {/* Key + status */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                            <span
+                                style={{ fontWeight: 700, fontSize: 11, color: '#0052cc', cursor: 'pointer', textDecoration: 'underline' }}
+                                onClick={() => router.open(`/browse/${issue.key}`)}
+                            >
+                                {issue.key}
+                            </span>
+                            {issue.statusCategory && <span style={{ ...statusBadgeStyle(issue.statusCategory), marginLeft: 0 }}>{issue.statusCategory}</span>}
+                        </div>
+
+                        {/* Summary */}
+                        <div style={{ fontSize: 13, color: '#172B4D', lineHeight: 1.4, marginBottom: 5 }}>{issue.summary}</div>
+
+                        {/* Sprint chip | Assignee chip */}
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                            {/* Sprint */}
+                            {isEditingSprint ? (
+                                <select
+                                    autoFocus
+                                    value={issue.sprintId ?? ''}
+                                    onChange={e => updateChildSprint(issue.key, e.target.value)}
+                                    onBlur={() => setEditing(null)}
+                                    style={inlineSelect}
+                                >
+                                    <option value="">No sprint</option>
+                                    {activeSprints.map(s => (
+                                        <option key={s.id} value={String(s.id)}>{s.name}</option>
+                                    ))}
+                                </select>
+                            ) : (
+                                <span
+                                    style={issue.sprintName ? chipFilled : chipEmpty}
+                                    onClick={() => setEditing({ key: issue.key, field: 'sprint' })}
+                                    title="Click to change sprint"
+                                >
+                                    🗓 {issue.sprintName ?? 'No sprint'}
+                                </span>
+                            )}
+
+                            {/* Assignee */}
+                            {isEditingAssignee ? (
+                                <select
+                                    autoFocus
+                                    value={issue.assignee?.accountId ?? ''}
+                                    onChange={e => updateChildAssignee(issue.key, e.target.value)}
+                                    onBlur={() => setEditing(null)}
+                                    style={inlineSelect}
+                                >
+                                    <option value="">Unassigned</option>
+                                    {assignableUsers.map(u => (
+                                        <option key={u.accountId} value={u.accountId}>{u.displayName}</option>
+                                    ))}
+                                </select>
+                            ) : (
+                                <span
+                                    style={issue.assignee ? chipFilled : chipEmpty}
+                                    onClick={() => setEditing({ key: issue.key, field: 'assignee' })}
+                                    title="Click to change assignee"
+                                >
+                                    👤 {issue.assignee?.displayName ?? 'Unassigned'}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    const openIssues = children?.filter(c => c.statusCategory !== 'Done') ?? [];
+    const doneIssues = children?.filter(c => c.statusCategory === 'Done') ?? [];
 
     return (
         <>
@@ -455,7 +620,7 @@ function EpicDetailModal({ epic, onClose }) {
             <div style={{
                 position: 'fixed', top: '50%', left: '50%',
                 transform: 'translate(-50%, -50%)',
-                width: 620, maxHeight: '80vh',
+                width: 680, maxHeight: '80vh',
                 background: '#fff', borderRadius: 8,
                 boxShadow: '0 8px 32px rgba(9,30,66,0.25)',
                 zIndex: 201, display: 'flex', flexDirection: 'column',
@@ -480,9 +645,7 @@ function EpicDetailModal({ epic, onClose }) {
                                 <span style={{ fontSize: 12, color: '#6B778C' }}>{epic.project.name}</span>
                             )}
                         </div>
-                        <div style={{ fontSize: 18, fontWeight: 600, color: '#172B4D', lineHeight: 1.3 }}>
-                            {epic.summary}
-                        </div>
+                        <div style={{ fontSize: 18, fontWeight: 600, color: '#172B4D', lineHeight: 1.3 }}>{epic.summary}</div>
                         {epic.assignee && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
                                 <img src={epic.assignee.avatarUrl} title={epic.assignee.displayName} style={{ width: 20, height: 20, borderRadius: '50%' }} alt={epic.assignee.displayName} />
@@ -490,32 +653,56 @@ function EpicDetailModal({ epic, onClose }) {
                             </div>
                         )}
                     </div>
-                    <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#6B778C', padding: '0 2px', lineHeight: 1, flexShrink: 0 }}>✕</button>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+                        <button
+                            onClick={handleMarkDone}
+                            disabled={markingDone}
+                            style={{ fontSize: 12, padding: '4px 10px', background: '#216e4e', color: '#fff', border: 'none', borderRadius: 4, cursor: markingDone ? 'default' : 'pointer', opacity: markingDone ? 0.7 : 1 }}
+                        >
+                            {markingDone ? 'Marking…' : '✓ Mark Done'}
+                        </button>
+                        <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#6B778C', padding: '0 2px', lineHeight: 1 }}>✕</button>
+                    </div>
                 </div>
 
                 {/* Body */}
                 <div style={{ padding: '16px 20px', overflowY: 'auto', flex: 1 }}>
+                    {doneError && <div style={{ fontSize: 12, color: '#c9372c', marginBottom: 10 }}>{doneError}</div>}
+
+                    {/* Progress bar */}
+                    {!loading && children && total > 0 && (
+                        <div style={{ marginBottom: 16 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#42526E', marginBottom: 4 }}>
+                                <span>Progress</span>
+                                <span>{doneCount} / {total} done — {pct}%</span>
+                            </div>
+                            <div style={{ height: 6, background: '#DFE1E6', borderRadius: 3, overflow: 'hidden' }}>
+                                <div style={{ height: '100%', width: `${pct}%`, background: pct === 100 ? '#216e4e' : '#0052cc', borderRadius: 3, transition: 'width 0.3s' }} />
+                            </div>
+                        </div>
+                    )}
+
                     <div style={{ fontWeight: 700, fontSize: 13, color: '#172B4D', marginBottom: 10 }}>Child Issues</div>
                     {loading && <div style={{ fontSize: 13, color: '#888' }}>Loading…</div>}
                     {childError && <div style={{ fontSize: 13, color: '#c9372c' }}>{childError}</div>}
                     {children && children.length === 0 && (
-                        <div style={{ fontSize: 13, color: '#888' }}>No open child issues.</div>
+                        <div style={{ fontSize: 13, color: '#888' }}>No child issues.</div>
                     )}
-                    {children && children.map(issue => (
-                        <div key={issue.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 0', borderBottom: '1px solid #F4F5F7' }}>
-                            {issue.assignee
-                                ? <img src={issue.assignee.avatarUrl} title={issue.assignee.displayName} style={{ width: 22, height: 22, borderRadius: '50%', flexShrink: 0, marginTop: 1 }} alt={issue.assignee.displayName} />
-                                : <span title="Unassigned" style={{ width: 22, height: 22, borderRadius: '50%', background: '#DFE1E6', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: '#97A0AF', flexShrink: 0, marginTop: 1 }}>?</span>
-                            }
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                                    <span style={{ fontWeight: 700, fontSize: 11, color: '#42526E' }}>{issue.key}</span>
-                                    {issue.statusCategory && <span style={{ ...statusBadgeStyle(issue.statusCategory), marginLeft: 0 }}>{issue.statusCategory}</span>}
-                                </div>
-                                <div style={{ fontSize: 13, color: '#172B4D', lineHeight: 1.4 }}>{issue.summary}</div>
-                            </div>
-                        </div>
-                    ))}
+                    {children && (
+                        <>
+                            {openIssues.map(renderChildIssue)}
+                            {doneIssues.length > 0 && (
+                                <>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '14px 0 4px' }}>
+                                        <div style={{ flex: 1, height: 1, background: '#DFE1E6' }} />
+                                        <span style={{ fontSize: 11, color: '#97A0AF', whiteSpace: 'nowrap' }}>Done ({doneIssues.length})</span>
+                                        <div style={{ flex: 1, height: 1, background: '#DFE1E6' }} />
+                                    </div>
+                                    {doneIssues.map(renderChildIssue)}
+                                </>
+                            )}
+                        </>
+                    )}
                 </div>
             </div>
         </>
@@ -623,7 +810,7 @@ const toggleButtonStyle = {
     color: '#333',
 };
 
-function PlanningGrid({ epics, sprints, focusAreaField, focusAreaOptions, onFocusAreaChange }) {
+function PlanningGrid({ epics, sprints, focusAreaField, focusAreaOptions, onFocusAreaChange, onEpicDone }) {
     const [positions, setPositions] = useState({});
     const [activeEpic, setActiveEpic] = useState(null);
     const [showBacklog, setShowBacklog] = useState(true);
@@ -976,7 +1163,12 @@ function PlanningGrid({ epics, sprints, focusAreaField, focusAreaOptions, onFocu
             </DragOverlay>
 
             {expandedEpic && (
-                <EpicDetailModal epic={expandedEpic} onClose={() => setExpandedEpic(null)} />
+                <EpicDetailModal
+                    epic={expandedEpic}
+                    sprints={sprints}
+                    onClose={() => setExpandedEpic(null)}
+                    onEpicDone={(key) => { setExpandedEpic(null); onEpicDone?.(key); }}
+                />
             )}
         </DndContext>
     );
@@ -1434,6 +1626,9 @@ function App() {
                             setEpics(prev => prev.map(e =>
                                 e.key === epicKey ? { ...e, focusArea: value } : e
                             ));
+                        }}
+                        onEpicDone={(epicKey) => {
+                            setEpics(prev => prev.filter(e => e.key !== epicKey));
                         }}
                     />
                 }

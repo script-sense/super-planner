@@ -150,27 +150,27 @@ Work through these tasks in order. Find the first unchecked task and implement i
 
 ## Epic Detail Modal — Upcoming Steps
 
-- [ ] **Modal Step 1 — Progress bar**
+- [x] **Modal Step 1 — Progress bar**
   - Child issues are already loaded in the modal, so count them client-side: total = all child issues, done = those with statusCategory = Done
   - Render a progress bar at the top of the modal body (e.g. "3 / 8 done — 37%") using the same coloured bar style as before
   - Goal: at-a-glance completion visible without leaving the modal
 
-- [ ] **Modal Step 2 — Sprint on child tickets**
+- [x] **Modal Step 2 — Sprint on child tickets**
   - Extend `fetchChildIssues` to also return the child's current sprint (customfield_10020 — pick active or last, same logic as epics)
   - Display the sprint name as a small label on each child issue row in the modal
   - Goal: full context on where each ticket currently sits
 
-- [ ] **Modal Step 3 — Assign sprint and assignee from the modal**
+- [x] **Modal Step 3 — Assign sprint and assignee from the modal**
   - For each child issue row, add an inline sprint picker (dropdown of the board's current sprints) and assignee picker
   - Sprint change calls `PUT /rest/agile/1.0/sprint/{sprintId}/issue` (or backlog endpoint); assignee change calls `PUT /rest/api/3/issue/{issueKey}` with `assignee: { accountId }`
   - Need a `getAssignableUsers` resolver (GET /rest/api/3/user/assignable/search?issueKey=) to populate the assignee picker
   - Goal: users can re-plan child tickets without leaving the planner
 
-- [ ] **Modal Step 4 — Child tickets clickable to open in Jira**
+- [x] **Modal Step 4 — Child tickets clickable to open in Jira**
   - Each child issue key in the modal should be a clickable link using `router.open('/browse/{key}')`, same as the epic key
   - Goal: one click from modal to Jira ticket
 
-- [ ] **Modal Step 5 — Mark epic Done**
+- [x] **Modal Step 5 — Mark epic Done**
   - Add a "Mark as Done" button in the modal header area
   - Calls `POST /rest/api/3/issue/{epicKey}/transitions` — first fetch available transitions to find the Done transition ID, then execute it
   - On success, remove the epic from the local epics list (it would be filtered out by `statusCategory != Done` on next load anyway)
