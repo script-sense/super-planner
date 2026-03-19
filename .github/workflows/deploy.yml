@@ -29,6 +29,13 @@ jobs:
         working-directory: static/planner-ui
         run: npm ci
 
+      - name: Run backend tests
+        run: npm test
+
+      - name: Run frontend tests
+        working-directory: static/planner-ui
+        run: npm test
+
       - name: Build frontend
         working-directory: static/planner-ui
         run: npm run build
