@@ -94,9 +94,7 @@ function computeMonthGroups(days) {
 }
 
 function monthLabel(d) {
-    const opts = { month: 'long' };
-    if (d.getFullYear() !== THIS_YEAR) opts.year = 'numeric';
-    return d.toLocaleDateString(undefined, opts);
+    return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 }
 
 // Group consecutive days by quarter → [{ label, startIdx, span }]
@@ -108,11 +106,11 @@ function computeQuarterGroups(days) {
         const q = Math.floor(days[i].getMonth() / 3);
         const key = `${days[i].getFullYear()}-${q}`;
         if (key !== cur) {
-            if (cur !== null) groups.push({ label: `Q${Number(cur.split('-')[1]) + 1}`, startIdx, span: i - startIdx });
+            if (cur !== null) { const [y, q] = cur.split('-'); groups.push({ label: `Q${Number(q) + 1} ${y}`, startIdx, span: i - startIdx }); }
             cur = key; startIdx = i;
         }
     }
-    if (cur !== null) groups.push({ label: `Q${Number(cur.split('-')[1]) + 1}`, startIdx, span: days.length - startIdx });
+    if (cur !== null) { const [y, q] = cur.split('-'); groups.push({ label: `Q${Number(q) + 1} ${y}`, startIdx, span: days.length - startIdx }); }
     return groups;
 }
 

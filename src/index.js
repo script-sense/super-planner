@@ -199,24 +199,34 @@ resolver.define('getEpics', async (req) => {
     const fields = ['summary', 'priority', 'assignee', 'customfield_10020', 'customfield_10019', 'project'];
     if (focusAreaFieldId) fields.push(focusAreaFieldId);
 
-    const response = await api
-        .asUser()
-        .requestJira(route`/rest/api/3/search/jql`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                jql: `filter = ${filterId} AND issuetype = Epic AND statusCategory != Done ORDER BY created DESC`,
-                fields,
-                maxResults: 200,
-            }),
-        });
+    const jql = `filter = ${filterId} AND issuetype = Epic AND statusCategory != Done ORDER BY created DESC`;
 
-    if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`Jira API error ${response.status}: ${text}`);
-    }
+    // /rest/api/3/search/jql caps at 100 per page — paginate with nextPageToken.
+    let allIssues = [];
+    let nextPageToken = undefined;
+    do {
+        const body = { jql, fields, maxResults: 100 };
+        if (nextPageToken) body.nextPageToken = nextPageToken;
 
-    const data = await response.json();
+        const response = await api
+            .asUser()
+            .requestJira(route`/rest/api/3/search/jql`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`Jira API error ${response.status}: ${text}`);
+        }
+
+        const data = await response.json();
+        allIssues = allIssues.concat(data.issues ?? []);
+        nextPageToken = data.nextPageToken ?? null;
+    } while (nextPageToken);
+
+    const data = { issues: allIssues };
 
     // Build a set of sprint IDs belonging to the selected board for fast lookup.
     const boardSprintIdSet = boardSprintIds?.length
