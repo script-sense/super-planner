@@ -923,13 +923,14 @@ async function navigateWithParams(boardId, filterId) {
 
 const settingsPanelStyle = {
     background: '#fff',
-    border: '1px solid #ccc',
+    border: '1px solid #DFE1E6',
     borderRadius: 4,
     padding: '10px 14px',
     marginTop: 4,
     minWidth: 260,
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
     position: 'absolute',
+    right: 0,
     zIndex: 10,
 };
 
@@ -1070,11 +1071,18 @@ function FocusAreaSettings({ focusAreaField, epics, onFieldChange }) {
     return (
         <div ref={wrapperRef} style={{ position: 'relative', alignSelf: 'flex-end', marginBottom: 2 }}>
             <button
-                style={{ ...toggleButtonStyle, fontSize: 13, padding: '4px 8px' }}
                 onClick={() => setOpen(o => !o)}
                 title="Manage Focus Area options"
+                style={{
+                    fontSize: 12, fontWeight: 600, color: open ? '#0052cc' : '#42526E',
+                    background: open ? '#DEEBFF' : '#F4F5F7',
+                    border: `1px solid ${open ? '#4C9AFF' : '#DFE1E6'}`,
+                    borderRadius: 4, padding: '4px 10px',
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5,
+                    whiteSpace: 'nowrap',
+                }}
             >
-                ⚙ Focus Areas
+                <span style={{ fontSize: 13 }}>⚙</span> Focus Areas
             </button>
             {open && (
                 <div style={settingsPanelStyle}>
@@ -1119,6 +1127,36 @@ function FocusAreaSettings({ focusAreaField, epics, onFieldChange }) {
     );
 }
 
+
+function ToolbarSelect({ id, label, value, onChange, disabled, children }) {
+    return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <label htmlFor={id} style={{ fontSize: 11, fontWeight: 600, color: '#6b778c', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
+                {label}
+            </label>
+            <select
+                id={id}
+                value={value}
+                onChange={onChange}
+                disabled={disabled}
+                style={{
+                    fontSize: 13, fontWeight: 500, color: '#172B4D',
+                    background: '#F4F5F7', border: '1px solid #DFE1E6',
+                    borderRadius: 4, padding: '3px 24px 3px 8px',
+                    cursor: 'pointer', outline: 'none',
+                    appearance: 'none', WebkitAppearance: 'none',
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%236b778c' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 7px center',
+                    maxWidth: 200,
+                    opacity: disabled ? 0.6 : 1,
+                }}
+            >
+                {children}
+            </select>
+        </div>
+    );
+}
 
 function App() {
     const [boards, setBoards] = useState(null);
@@ -1198,52 +1236,63 @@ function App() {
         : (epics ? [...new Set(epics.map(e => e.focusArea).filter(Boolean))].sort() : []);
 
     return (
-        <div style={{ padding: 16, fontFamily: 'sans-serif', height: '100vh', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ marginBottom: 16, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-                <div>
-                    <label htmlFor="board-select" style={{ marginRight: 6 }}>Board:</label>
-                    <select
-                        id="board-select"
-                        value={selectedBoard ?? ''}
-                        onChange={e => handleBoardChange(e.target.value)}
-                        disabled={!boards}
-                    >
-                        {boards
-                            ? boards.map(b => (
-                                  <option key={b.id} value={b.id}>{b.name}</option>
-                              ))
-                            : <option>Loading...</option>
-                        }
-                    </select>
-                </div>
-                <div>
-                    <label htmlFor="filter-select" style={{ marginRight: 6, fontSize: 13 }}>Filter:</label>
-                    <select
-                        id="filter-select"
-                        value={selectedFilter ?? ''}
-                        onChange={e => handleFilterChange(e.target.value)}
-                        disabled={!filters}
-                        style={{ fontSize: 13 }}
-                    >
-                        {filters
-                            ? filters.map(f => (
-                                  <option key={f.id} value={f.id}>{f.name}</option>
-                              ))
-                            : <option>Loading...</option>
-                        }
-                    </select>
-                </div>
-            </div>
+        <div style={{ fontFamily: 'sans-serif', height: '100vh', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
 
-            {focusAreaField && (
-                <div style={{ marginBottom: 8, flexShrink: 0 }}>
+            {/* ── Toolbar ── */}
+            <div style={{
+                flexShrink: 0,
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '0 14px',
+                height: 48,
+                background: '#fff',
+                borderBottom: '2px solid #e4e6ea',
+                boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+            }}>
+                {/* App title */}
+                <span style={{ fontWeight: 700, fontSize: 15, color: '#172B4D', letterSpacing: '-0.2px', whiteSpace: 'nowrap', marginRight: 6 }}>
+                    Super Planner
+                </span>
+
+                <div style={{ width: 1, height: 22, background: '#ddd', flexShrink: 0 }} />
+
+                {/* Board selector */}
+                <ToolbarSelect
+                    id="board-select"
+                    label="Board"
+                    value={selectedBoard ?? ''}
+                    onChange={e => handleBoardChange(e.target.value)}
+                    disabled={!boards}
+                >
+                    {boards
+                        ? boards.map(b => <option key={b.id} value={b.id}>{b.name}</option>)
+                        : <option>Loading…</option>}
+                </ToolbarSelect>
+
+                <div style={{ width: 1, height: 22, background: '#ddd', flexShrink: 0 }} />
+
+                {/* Filter selector */}
+                <ToolbarSelect
+                    id="filter-select"
+                    label="Filter"
+                    value={selectedFilter ?? ''}
+                    onChange={e => handleFilterChange(e.target.value)}
+                    disabled={!filters}
+                >
+                    {filters
+                        ? filters.map(f => <option key={f.id} value={f.id}>{f.name}</option>)
+                        : <option>Loading…</option>}
+                </ToolbarSelect>
+
+                {/* Right-side actions */}
+                <div style={{ flex: 1 }} />
+                {focusAreaField && (
                     <FocusAreaSettings
                         focusAreaField={focusAreaField}
                         epics={epics}
                         onFieldChange={setFocusAreaField}
                     />
-                </div>
-            )}
+                )}
+            </div>
 
             {/* Grid area — vertical scroll container; grid grows with content, headers stay sticky */}
             <div style={{ flex: 1, minHeight: 0, overflowX: 'hidden', overflowY: 'auto' }}>
