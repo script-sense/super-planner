@@ -808,7 +808,8 @@ const toggleButtonStyle = {
     color: '#333',
 };
 
-function PlanningGrid({ epics, sprints, focusAreaField, focusAreaOptions, onFocusAreaChange, onEpicDone }) {
+function PlanningGrid({ epics, sprints, selectedPriorities, focusAreaField, focusAreaOptions, onFocusAreaChange, onEpicDone }) {
+    const visibleRows = ROWS.filter(r => selectedPriorities.has(r.key));
     const [positions, setPositions] = useState({});
     const [activeEpic, setActiveEpic] = useState(null);
     const [showBacklog, setShowBacklog] = useState(true);
@@ -848,7 +849,7 @@ function PlanningGrid({ epics, sprints, focusAreaField, focusAreaOptions, onFocu
     const gridData = buildGridData(epics, sprints, positions, sections, localCellOrders);
 
     const HEADER_ROWS = 4;
-    const rowsPerSection = ROWS.length + (hasSections ? 1 : 0); // section header row + 5 priority rows
+    const rowsPerSection = visibleRows.length + (hasSections ? 1 : 0); // section header row + priority rows
 
     // Scroll to active sprint on first render
     useEffect(() => {
@@ -936,14 +937,14 @@ function PlanningGrid({ epics, sprints, focusAreaField, focusAreaOptions, onFocu
 
     const gridTemplateColumns = `120px repeat(${numDays}, ${DAY_COL_WIDTH}px)`;
     const backlogCount = sections.reduce(
-        (n, sec) => n + ROWS.reduce((m, row) => m + (gridData[sec.key]?.[row.key]?.backlog.length ?? 0), 0), 0
+        (n, sec) => n + visibleRows.reduce((m, row) => m + (gridData[sec.key]?.[row.key]?.backlog.length ?? 0), 0), 0
     );
 
     function renderSection(section, si) {
         const baseRow      = HEADER_ROWS + 1 + si * rowsPerSection;
         const dataStartRow = baseRow + (hasSections ? 1 : 0);
         const collapsed    = collapsedSections.has(section.key);
-        const epicCount    = ROWS.reduce((n, row) =>
+        const epicCount    = visibleRows.reduce((n, row) =>
             n + Object.values(gridData[section.key]?.[row.key] ?? {}).reduce((m, arr) => m + arr.length, 0), 0);
         return (
             <React.Fragment key={section.key}>
@@ -985,7 +986,7 @@ function PlanningGrid({ epics, sprints, focusAreaField, focusAreaOptions, onFocu
                 )}
 
                 {/* Priority rows — not rendered when collapsed; empty auto rows collapse to 0 height */}
-                {!collapsed && ROWS.map((row, ri) => {
+                {!collapsed && visibleRows.map((row, ri) => {
                     const dataRow = dataStartRow + ri;
                     return (
                         <React.Fragment key={row.key}>
@@ -1113,7 +1114,7 @@ function PlanningGrid({ epics, sprints, focusAreaField, focusAreaOptions, onFocu
                         </div>
                         {sections.map((section, si) => {
                             const collapsed = collapsedSections.has(section.key);
-                            const backlogCount = ROWS.reduce((n, row) => n + (gridData[section.key]?.[row.key]?.backlog.length ?? 0), 0);
+                            const backlogCount = visibleRows.reduce((n, row) => n + (gridData[section.key]?.[row.key]?.backlog.length ?? 0), 0);
                             return (
                                 <div key={section.key}>
                                     {hasSections && (
@@ -1135,7 +1136,7 @@ function PlanningGrid({ epics, sprints, focusAreaField, focusAreaOptions, onFocu
                                             )}
                                         </div>
                                     )}
-                                    {!collapsed && ROWS.map(row => (
+                                    {!collapsed && visibleRows.map(row => (
                                         <div key={row.key}>
                                             <div style={{ ...rowLabelStyle(row), borderRight: 'none', borderBottom: 'none', paddingTop: 8, paddingBottom: 4 }}>
                                                 {row.label}
@@ -1456,10 +1457,20 @@ function App() {
     const [filters, setFilters] = useState(null);
     const [selectedFilter, setSelectedFilter] = useState(null);
     const [selectedProject, setSelectedProject] = useState(null); // null = All Projects
+    const [selectedPriorities, setSelectedPriorities] = useState(() => new Set(ROWS.map(r => r.key)));
     const [sprints, setSprints] = useState(null);
     const [epics, setEpics] = useState(null);
     const [focusAreaField, setFocusAreaField] = useState(undefined); // undefined = loading, null = not found
     const [error, setError] = useState(null);
+
+    function togglePriority(key) {
+        setSelectedPriorities(prev => {
+            const next = new Set(prev);
+            if (next.has(key)) { if (next.size > 1) next.delete(key); } // keep at least one
+            else next.add(key);
+            return next;
+        });
+    }
 
     // On mount: load reference data and restore board + filter + project from query params.
     useEffect(() => {
@@ -1600,6 +1611,36 @@ function App() {
                     {projects.map(p => <option key={p.key} value={p.key}>{p.name}</option>)}
                 </ToolbarSelect>
 
+                <div style={{ width: 1, height: 22, background: '#ddd', flexShrink: 0 }} />
+
+                {/* Priority filter chips */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: '#6b778c', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap', marginRight: 2 }}>Priority</span>
+                    {ROWS.map(row => {
+                        const on = selectedPriorities.has(row.key);
+                        return (
+                            <button
+                                key={row.key}
+                                onClick={() => togglePriority(row.key)}
+                                title={row.label}
+                                style={{
+                                    fontSize: 11, fontWeight: 600,
+                                    padding: '2px 8px', borderRadius: 10,
+                                    border: `1px solid ${on ? row.cardBorder : '#DFE1E6'}`,
+                                    background: on ? row.cardBg : '#F4F5F7',
+                                    color: on ? row.color : '#97A0AF',
+                                    cursor: 'pointer',
+                                    opacity: on ? 1 : 0.55,
+                                    transition: 'all 0.1s',
+                                    whiteSpace: 'nowrap',
+                                }}
+                            >
+                                {row.label}
+                            </button>
+                        );
+                    })}
+                </div>
+
                 {/* Right-side actions */}
                 <div style={{ flex: 1 }} />
                 {focusAreaField && (
@@ -1618,6 +1659,7 @@ function App() {
                     : <PlanningGrid
                         epics={visibleEpics}
                         sprints={sprints}
+                        selectedPriorities={selectedPriorities}
                         focusAreaField={focusAreaField}
                         focusAreaOptions={focusAreaOptions}
                         onFocusAreaChange={(epicKey, value) => {
