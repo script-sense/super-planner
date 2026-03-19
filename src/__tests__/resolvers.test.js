@@ -559,42 +559,50 @@ describe('updateIssueAssignee', () => {
     });
 });
 
+// ── getDoneTransitions ────────────────────────────────────────────────────────
+
+describe('getDoneTransitions', () => {
+    test('returns all done-category transitions', async () => {
+        mockRequestJira.mockResolvedValueOnce(makeRes(true, {
+            transitions: [
+                { id: '11', name: 'In Progress', to: { statusCategory: { key: 'indeterminate' } } },
+                { id: '31', name: 'Done',         to: { statusCategory: { key: 'done' } } },
+                { id: '32', name: 'Closed',       to: { statusCategory: { key: 'done' } } },
+            ],
+        }));
+        const result = await call('getDoneTransitions', { epicKey: 'NH-1' });
+        expect(result).toHaveLength(2);
+        expect(result[0]).toEqual({ id: '31', name: 'Done' });
+        expect(result[1]).toEqual({ id: '32', name: 'Closed' });
+    });
+
+    test('returns empty array when no done transitions exist', async () => {
+        mockRequestJira.mockResolvedValueOnce(makeRes(true, {
+            transitions: [{ id: '11', name: 'Todo', to: { statusCategory: { key: 'new' } } }],
+        }));
+        const result = await call('getDoneTransitions', { epicKey: 'NH-1' });
+        expect(result).toEqual([]);
+    });
+
+    test('throws on API error', async () => {
+        mockRequestJira.mockResolvedValueOnce(makeRes(false, {}, 'not found'));
+        await expect(call('getDoneTransitions', { epicKey: 'NH-1' })).rejects.toThrow('Jira API error');
+    });
+});
+
 // ── transitionEpicDone ────────────────────────────────────────────────────────
 
 describe('transitionEpicDone', () => {
-    test('finds the done transition and executes it', async () => {
-        mockRequestJira
-            .mockResolvedValueOnce(makeRes(true, {
-                transitions: [
-                    { id: '11', name: 'In Progress', to: { statusCategory: { key: 'indeterminate' } } },
-                    { id: '31', name: 'Done',        to: { statusCategory: { key: 'done' } } },
-                ],
-            }))
-            .mockResolvedValueOnce(makeRes(true, {}));
-        await call('transitionEpicDone', { epicKey: 'NH-1' });
-        expect(mockRequestJira).toHaveBeenCalledTimes(2);
-        const body = JSON.parse(mockRequestJira.mock.calls[1][1].body);
+    test('executes the supplied transitionId', async () => {
+        mockRequestJira.mockResolvedValueOnce(makeRes(true, {}));
+        await call('transitionEpicDone', { epicKey: 'NH-1', transitionId: '31' });
+        expect(mockRequestJira).toHaveBeenCalledTimes(1);
+        const body = JSON.parse(mockRequestJira.mock.calls[0][1].body);
         expect(body.transition.id).toBe('31');
     });
 
-    test('throws when no done transition exists', async () => {
-        mockRequestJira.mockResolvedValueOnce(makeRes(true, {
-            transitions: [{ id: '11', to: { statusCategory: { key: 'new' } } }],
-        }));
-        await expect(call('transitionEpicDone', { epicKey: 'NH-1' })).rejects.toThrow('No Done transition');
-    });
-
-    test('throws on transitions fetch error', async () => {
-        mockRequestJira.mockResolvedValueOnce(makeRes(false, {}, 'not found'));
-        await expect(call('transitionEpicDone', { epicKey: 'NH-1' })).rejects.toThrow('Jira API error');
-    });
-
     test('throws when transition execution fails', async () => {
-        mockRequestJira
-            .mockResolvedValueOnce(makeRes(true, {
-                transitions: [{ id: '31', to: { statusCategory: { key: 'done' } } }],
-            }))
-            .mockResolvedValueOnce(makeRes(false, {}, 'conflict'));
-        await expect(call('transitionEpicDone', { epicKey: 'NH-1' })).rejects.toThrow('Jira API error');
+        mockRequestJira.mockResolvedValueOnce(makeRes(false, {}, 'conflict'));
+        await expect(call('transitionEpicDone', { epicKey: 'NH-1', transitionId: '31' })).rejects.toThrow('Jira API error');
     });
 });

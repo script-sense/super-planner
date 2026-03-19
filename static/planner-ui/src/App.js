@@ -289,6 +289,8 @@ function EpicDetailModal({ epic, sprints, onClose, onEpicDone }) {
     const [assignableUsers, setAssignableUsers] = useState([]);
     const [markingDone, setMarkingDone] = useState(false);
     const [doneError, setDoneError] = useState(null);
+    const [doneTransitions, setDoneTransitions] = useState(null); // null = loading, [] = none, [{id,name}] = options
+    const [selectedTransitionId, setSelectedTransitionId] = useState(null);
     // { key: issueKey, field: 'sprint' | 'assignee' } — which chip is being edited
     const [editing, setEditing] = useState(null);
 
@@ -296,11 +298,15 @@ function EpicDetailModal({ epic, sprints, onClose, onEpicDone }) {
         Promise.all([
             fetchChildIssues(epic.key),
             invoke('getAssignableUsers', { issueKey: epic.key }),
+            invoke('getDoneTransitions', { epicKey: epic.key }),
         ])
-            .then(([issues, users]) => {
+            .then(([issues, users, transitions]) => {
                 setChildren(issues);
                 setAssignableUsers(users ?? []);
                 setLoading(false);
+                const t = transitions ?? [];
+                setDoneTransitions(t);
+                setSelectedTransitionId(t[0]?.id ?? null);
             })
             .catch(err => { setChildError(err.message ?? 'Failed to load'); setLoading(false); });
     }, [epic.key]);
@@ -345,9 +351,10 @@ function EpicDetailModal({ epic, sprints, onClose, onEpicDone }) {
     }
 
     function handleMarkDone() {
+        if (!selectedTransitionId) return;
         setMarkingDone(true);
         setDoneError(null);
-        invoke('transitionEpicDone', { epicKey: epic.key })
+        invoke('transitionEpicDone', { epicKey: epic.key, transitionId: selectedTransitionId })
             .then(() => { onEpicDone(epic.key); onClose(); })
             .catch(err => { setDoneError(err.message ?? 'Failed to mark as done'); setMarkingDone(false); });
     }
@@ -500,10 +507,20 @@ function EpicDetailModal({ epic, sprints, onClose, onEpicDone }) {
                         )}
                     </div>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+                        {doneTransitions !== null && doneTransitions.length > 1 && (
+                            <select
+                                value={selectedTransitionId ?? ''}
+                                onChange={e => setSelectedTransitionId(e.target.value)}
+                                disabled={markingDone}
+                                style={{ fontSize: 12, padding: '4px 6px', border: '1px solid #DFE1E6', borderRadius: 4, color: '#172B4D', background: '#fff', cursor: 'pointer' }}
+                            >
+                                {doneTransitions.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                            </select>
+                        )}
                         <button
                             onClick={handleMarkDone}
-                            disabled={markingDone}
-                            style={{ fontSize: 12, padding: '4px 10px', background: '#216e4e', color: '#fff', border: 'none', borderRadius: 4, cursor: markingDone ? 'default' : 'pointer', opacity: markingDone ? 0.7 : 1 }}
+                            disabled={markingDone || !selectedTransitionId}
+                            style={{ fontSize: 12, padding: '4px 10px', background: '#216e4e', color: '#fff', border: 'none', borderRadius: 4, cursor: (markingDone || !selectedTransitionId) ? 'default' : 'pointer', opacity: (markingDone || !selectedTransitionId) ? 0.7 : 1 }}
                         >
                             {markingDone ? 'Marking…' : '✓ Mark Done'}
                         </button>
