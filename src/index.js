@@ -196,7 +196,7 @@ resolver.define('getEpics', async (req) => {
     const { filterId, focusAreaFieldId, boardSprintIds } = req.payload;
 
     // customfield_10019 = Jira rank (LexoRank) — used to sort epics within a cell
-    const fields = ['summary', 'priority', 'status', 'assignee', 'customfield_10020', 'customfield_10019', 'project'];
+    const fields = ['summary', 'priority', 'assignee', 'customfield_10020', 'customfield_10019', 'project'];
     if (focusAreaFieldId) fields.push(focusAreaFieldId);
 
     const response = await api
@@ -238,7 +238,6 @@ resolver.define('getEpics', async (req) => {
             key: issue.key,
             summary: issue.fields.summary,
             priority: issue.fields.priority?.name ?? null,
-            statusCategory: issue.fields.status?.statusCategory?.name ?? null,
             assignee: issue.fields.assignee
                 ? { displayName: issue.fields.assignee.displayName, avatarUrl: issue.fields.assignee.avatarUrls?.['24x24'] ?? null }
                 : null,
@@ -253,60 +252,6 @@ resolver.define('getEpics', async (req) => {
     });
 });
 
-// Fetch completion counts for a list of epics.
-// Returns { [epicKey]: { total, done } }.
-// Handles both classic projects (Epic Link field) and next-gen (parent field).
-resolver.define('getEpicsProgress', async (req) => {
-    const { epicKeys } = req.payload;
-    if (!epicKeys?.length) return {};
-
-    // Batch into chunks of 20 to stay within JQL length limits.
-    const CHUNK = 20;
-    const PAGE_SIZE = 100; // Jira Cloud caps maxResults at 100
-    const merged = {};
-
-    for (let i = 0; i < epicKeys.length; i += CHUNK) {
-        const chunk = epicKeys.slice(i, i + CHUNK);
-        // Quote each key so hyphens aren't misinterpreted by the JQL parser.
-        const quoted = chunk.map(k => `"${k}"`).join(',');
-        const jql = `issueType != Epic AND (("Epic Link" in (${quoted})) OR (parent in (${quoted})))`;
-
-        let startAt = 0;
-        let fetched = 0;
-        let total = 1; // enter loop at least once
-
-        while (startAt < total) {
-            const response = await api.asUser().requestJira(route`/rest/api/3/search/jql`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ jql, fields: ['status', 'parent', 'customfield_10014'], maxResults: PAGE_SIZE, startAt }),
-            });
-
-            if (!response.ok) {
-                const text = await response.text();
-                throw new Error(`Jira API error ${response.status}: ${text}`);
-            }
-
-            const data = await response.json();
-            total = data.total ?? 0;
-
-            for (const issue of data.issues) {
-                // customfield_10014 = Epic Link (classic); parent.key = next-gen parent
-                const epicKey = issue.fields.customfield_10014 ?? issue.fields.parent?.key ?? null;
-                if (!epicKey || !chunk.includes(epicKey)) continue;
-                if (!merged[epicKey]) merged[epicKey] = { total: 0, done: 0 };
-                merged[epicKey].total++;
-                if (issue.fields.status?.statusCategory?.name === 'Done') merged[epicKey].done++;
-            }
-
-            fetched += data.issues.length;
-            startAt += PAGE_SIZE;
-            if (fetched >= total || data.issues.length === 0) break;
-        }
-    }
-
-    return merged;
-});
 
 // Set (or clear) the Focus Area custom field on an epic.
 // Pass optionId = null to clear it. Using ID is more reliable than value name.
