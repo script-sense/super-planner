@@ -966,27 +966,29 @@ async function getContext() {
     return appContext;
 }
 
-// Read boardId and filterId from URL query params.
+// Read boardId, filterId, and projectKey from URL query params.
 async function getParamsFromLocation() {
     const context = await getContext();
     const location = context?.extension?.location ?? '';
     const qIdx = location.indexOf('?');
-    if (qIdx === -1) return { boardId: null, filterId: null };
+    if (qIdx === -1) return { boardId: null, filterId: null, projectKey: null };
     const params = new URLSearchParams(location.slice(qIdx));
     return {
         boardId: params.get('boardId') ? Number(params.get('boardId')) : null,
         filterId: params.get('filterId') ?? null,
+        projectKey: params.get('projectKey') ?? null,
     };
 }
 
-// Update the URL query params without reloading — persists board + filter selection.
-async function navigateWithParams(boardId, filterId) {
+// Update the URL query params without reloading — persists board + filter + project selection.
+async function navigateWithParams(boardId, filterId, projectKey) {
     const context = await getContext();
     const location = context?.extension?.location ?? '';
     const basePath = location.split('?')[0];
     const params = new URLSearchParams();
     if (boardId != null) params.set('boardId', String(boardId));
     if (filterId != null) params.set('filterId', String(filterId));
+    if (projectKey != null) params.set('projectKey', String(projectKey));
     router.navigate(`${basePath}?${params.toString()}`);
 }
 
@@ -1232,16 +1234,17 @@ function App() {
     const [selectedBoard, setSelectedBoard] = useState(null);
     const [filters, setFilters] = useState(null);
     const [selectedFilter, setSelectedFilter] = useState(null);
+    const [selectedProject, setSelectedProject] = useState(null); // null = All Projects
     const [sprints, setSprints] = useState(null);
     const [epics, setEpics] = useState(null);
     const [focusAreaField, setFocusAreaField] = useState(undefined); // undefined = loading, null = not found
     const [epicProgress, setEpicProgress] = useState({});
     const [error, setError] = useState(null);
 
-    // On mount: load reference data and restore board + filter from query params.
+    // On mount: load reference data and restore board + filter + project from query params.
     useEffect(() => {
         Promise.all([invoke('getBoards'), invoke('getFilters'), invoke('getFocusAreaField'), getParamsFromLocation()])
-            .then(([boardData, filterData, focusField, { boardId: paramBoardId, filterId: paramFilterId }]) => {
+            .then(([boardData, filterData, focusField, { boardId: paramBoardId, filterId: paramFilterId, projectKey: paramProjectKey }]) => {
                 setBoards(boardData);
                 setFilters(filterData);
                 setFocusAreaField(focusField ?? null);
@@ -1253,6 +1256,7 @@ function App() {
                 // Honour URL filter param; otherwise auto-match to the board.
                 const filterId = paramFilterId ?? findMatchingFilter(filterData, board);
                 setSelectedFilter(filterId);
+                setSelectedProject(paramProjectKey ?? null);
             })
             .catch(err => setError(err.message ?? 'Failed to load data'));
     }, []);
@@ -1291,12 +1295,18 @@ function App() {
         const filterId = findMatchingFilter(filters, board);
         setSelectedBoard(boardId);
         setSelectedFilter(filterId);
-        navigateWithParams(boardId, filterId);
+        navigateWithParams(boardId, filterId, selectedProject);
     }
 
     function handleFilterChange(filterId) {
         setSelectedFilter(filterId);
-        navigateWithParams(selectedBoard, filterId);
+        navigateWithParams(selectedBoard, filterId, selectedProject);
+    }
+
+    function handleProjectChange(projectKey) {
+        const key = projectKey === '' ? null : projectKey;
+        setSelectedProject(key);
+        navigateWithParams(selectedBoard, selectedFilter, key);
     }
 
     if (error) return <div>Error: {error}</div>;
@@ -1305,6 +1315,17 @@ function App() {
     const focusAreaOptions = focusAreaField?.options?.length
         ? focusAreaField.options.map(o => o.value)
         : (epics ? [...new Set(epics.map(e => e.focusArea).filter(Boolean))].sort() : []);
+
+    // Derive sorted project list from loaded epics — no extra resolver needed.
+    const projects = epics
+        ? [...new Map(epics.filter(e => e.project).map(e => [e.project.key, e.project])).values()]
+            .sort((a, b) => a.name.localeCompare(b.name))
+        : [];
+
+    // Apply project filter client-side.
+    const visibleEpics = selectedProject && epics
+        ? epics.filter(e => e.project?.key === selectedProject)
+        : epics;
 
     return (
         <div style={{ fontFamily: 'sans-serif', height: '100vh', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
@@ -1354,6 +1375,20 @@ function App() {
                         : <option>Loading…</option>}
                 </ToolbarSelect>
 
+                <div style={{ width: 1, height: 22, background: '#ddd', flexShrink: 0 }} />
+
+                {/* Project filter */}
+                <ToolbarSelect
+                    id="project-select"
+                    label="Project"
+                    value={selectedProject ?? ''}
+                    onChange={e => handleProjectChange(e.target.value)}
+                    disabled={!epics}
+                >
+                    <option value="">All Projects</option>
+                    {projects.map(p => <option key={p.key} value={p.key}>{p.name}</option>)}
+                </ToolbarSelect>
+
                 {/* Right-side actions */}
                 <div style={{ flex: 1 }} />
                 {focusAreaField && (
@@ -1370,7 +1405,7 @@ function App() {
                 {!sprints || !epics
                     ? <GridSkeleton />
                     : <PlanningGrid
-                        epics={epics}
+                        epics={visibleEpics}
                         sprints={sprints}
                         focusAreaField={focusAreaField}
                         focusAreaOptions={focusAreaOptions}
