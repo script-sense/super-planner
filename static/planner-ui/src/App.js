@@ -442,20 +442,17 @@ function EpicCard({ epic, isDragOverlay, row, focusAreaField, onFocusAreaChange,
         >
             <div style={cardHeaderStyle} onClick={toggle}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    {/* Step 19 — click key to open in Jira */}
                     <span
                         style={{ ...cardKeyStyle, cursor: 'pointer', textDecoration: 'underline' }}
                         onClick={e => { e.stopPropagation(); router.open(`/browse/${epic.key}`); }}
                     >
                         {epic.key}
                     </span>
-                    {/* Step 20 — status badge */}
                     {epic.statusCategory && (
                         <span style={statusBadgeStyle(epic.statusCategory)}>{epic.statusCategory}</span>
                     )}
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {/* Step 21 — assignee avatar */}
                     {!isDragOverlay && (
                         epic.assignee
                             ? (
@@ -483,7 +480,6 @@ function EpicCard({ epic, isDragOverlay, row, focusAreaField, onFocusAreaChange,
                 <ProgressBar total={progress.total} done={progress.done} />
             )}
 
-
             {expanded && !isDragging && (
                 <div style={childIssueStyle}>
                     {loading && <div style={{ fontSize: 12, color: '#888' }}>Loading...</div>}
@@ -493,7 +489,6 @@ function EpicCard({ epic, isDragOverlay, row, focusAreaField, onFocusAreaChange,
                     )}
                     {children && children.map(issue => (
                         <div key={issue.key} style={childItemStyle}>
-                            {/* Assignee avatar */}
                             {issue.assignee
                                 ? <img src={issue.assignee.avatarUrl} title={issue.assignee.displayName} style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0, marginTop: 1 }} alt={issue.assignee.displayName} />
                                 : <span title="Unassigned" style={{ width: 16, height: 16, borderRadius: '50%', background: '#ddd', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#999', flexShrink: 0, marginTop: 1 }}>?</span>
@@ -627,11 +622,12 @@ function PlanningGrid({ epics, sprints, focusAreaField, focusAreaOptions, onFocu
             const currentKey = epic?.focusArea ?? UNASSIGNED_KEY;
             if (sectionKey !== currentKey) {
                 const newFocusArea = sectionKey === UNASSIGNED_KEY ? null : sectionKey;
+                const option = focusAreaField.options.find(o => o.value === sectionKey);
                 onFocusAreaChange(active.id, newFocusArea);
                 invoke('updateEpicFocusArea', {
                     epicKey: active.id,
                     fieldId: focusAreaField.fieldId,
-                    value: newFocusArea,
+                    optionId: option?.id ?? null,
                 }).catch(err => console.error('Failed to update focus area:', err));
             }
         }
@@ -727,19 +723,20 @@ function PlanningGrid({ epics, sprints, focusAreaField, focusAreaOptions, onFocu
                 }
             `}</style>
 
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                {/* Scrollable calendar grid — overflowX:auto handles horizontal scroll + left-sticky row labels;
-                    overflowY:clip does NOT create a scroll container so top-sticky headers propagate up to the
-                    App wrapper (overflowY:auto), which is the actual vertical scroll container. */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, height: '100%' }}>
+                {/* Single scroll container for both axes — alignContent:start means auto rows size to
+                    content (not compressed to fill height), so cells expand as cards are added.
+                    Sticky top headers and sticky left labels both work relative to this container. */}
                 <div
                     ref={scrollRef}
                     style={{
-                        flex: 1, minWidth: 0,
+                        flex: 1, minWidth: 0, height: '100%',
                         display: 'grid',
                         gridTemplateColumns,
                         gridTemplateRows: `${HDR_Q}px ${HDR_M}px ${HDR_D}px ${HDR_S}px`,
+                        gridAutoRows: 'max-content',
                         alignContent: 'start',
-                        overflowX: 'auto', overflowY: 'clip',
+                        overflowX: 'auto', overflowY: 'auto',
                         border: '1px solid #ccc', borderRadius: 4,
                     }}
                 >
@@ -807,7 +804,7 @@ function PlanningGrid({ epics, sprints, focusAreaField, focusAreaOptions, onFocu
 
                 {/* Collapsible backlog panel — sectioned to match the grid */}
                 {showBacklog && (
-                    <div style={{ ...backlogPanelStyle, border: '1px solid #ccc', borderRadius: 4, position: 'sticky', top: 0, maxHeight: '100vh', overflowY: 'auto' }}>
+                    <div style={{ ...backlogPanelStyle, border: '1px solid #ccc', borderRadius: 4, alignSelf: 'stretch', overflowY: 'auto' }}>
                         <div style={backlogHeaderStyle}>
                             <span>Backlog {backlogCount > 0 && `(${backlogCount})`}</span>
                             <button style={toggleButtonStyle} onClick={() => setShowBacklog(false)}>✕ Hide</button>
@@ -1177,13 +1174,15 @@ function App() {
             .catch(err => setError(err.message ?? 'Failed to load sprints'));
     }, [selectedBoard]);
 
-    // Only re-fetch epics when the filter or field ID changes — not on options list updates.
+    // Re-fetch epics when the filter, field ID, or board sprints change.
+    // Sprints are passed so the resolver can ignore sprint assignments from other boards.
     const focusAreaFieldId = focusAreaField?.fieldId ?? null;
     useEffect(() => {
-        if (!selectedFilter || focusAreaField === undefined) return;
+        if (!selectedFilter || focusAreaField === undefined || !sprints) return;
         setEpics(null);
         setEpicProgress({});
-        invoke('getEpics', { filterId: selectedFilter, focusAreaFieldId })
+        const boardSprintIds = sprints.map(s => s.id);
+        invoke('getEpics', { filterId: selectedFilter, focusAreaFieldId, boardSprintIds })
             .then(data => {
                 setEpics(data);
                 // Fetch progress in the background after epics are rendered.
@@ -1194,7 +1193,7 @@ function App() {
                 }
             })
             .catch(err => setError(err.message ?? 'Failed to load epics'));
-    }, [selectedFilter, focusAreaFieldId]);
+    }, [selectedFilter, focusAreaFieldId, sprints]);
 
     function handleBoardChange(boardId) {
         const board = boards?.find(b => String(b.id) === String(boardId));
@@ -1275,8 +1274,8 @@ function App() {
                 )}
             </div>
 
-            {/* Grid area — vertical scroll container; grid grows with content, headers stay sticky */}
-            <div style={{ flex: 1, minHeight: 0, overflowX: 'hidden', overflowY: 'auto' }}>
+            {/* Grid area — overflow:hidden lets the grid div inside be the sole scroll container */}
+            <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
                 {!sprints || !epics
                     ? <GridSkeleton />
                     : <PlanningGrid

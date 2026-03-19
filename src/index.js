@@ -189,8 +189,11 @@ resolver.define('getFilters', async () => {
 // Fetch all non-Done epics matching the given saved filter.
 // Column placement comes from the Jira sprint field; row from the Jira priority field.
 // Pass focusAreaFieldId to also return each epic's Focus Area value.
+// Pass boardSprintIds (array of sprint IDs from the selected board) to restrict sprint
+// placement to only sprints on that board — epics can appear in sprints across multiple
+// boards and we must ignore sprints that don't belong to the selected board.
 resolver.define('getEpics', async (req) => {
-    const { filterId, focusAreaFieldId } = req.payload;
+    const { filterId, focusAreaFieldId, boardSprintIds } = req.payload;
 
     const fields = ['summary', 'priority', 'status', 'assignee', 'customfield_10020'];
     if (focusAreaFieldId) fields.push(focusAreaFieldId);
@@ -214,10 +217,18 @@ resolver.define('getEpics', async (req) => {
 
     const data = await response.json();
 
+    // Build a set of sprint IDs belonging to the selected board for fast lookup.
+    const boardSprintIdSet = boardSprintIds?.length
+        ? new Set(boardSprintIds.map(String))
+        : null;
+
     return data.issues.map(issue => {
-        // customfield_10020 is the sprint field — returned as an array; pick the active sprint
-        // or fall back to the last one if none is active.
-        const sprints = issue.fields.customfield_10020 ?? [];
+        // customfield_10020 is the sprint field — returned as an array.
+        // Filter to only sprints from the selected board, then pick active or last.
+        const allSprints = issue.fields.customfield_10020 ?? [];
+        const sprints = boardSprintIdSet
+            ? allSprints.filter(s => boardSprintIdSet.has(String(s.id)))
+            : allSprints;
         const activeSprint = sprints.find(s => s.state === 'active') ?? sprints[sprints.length - 1] ?? null;
         const focusArea = focusAreaFieldId
             ? (issue.fields[focusAreaFieldId]?.value ?? null)
@@ -230,51 +241,62 @@ resolver.define('getEpics', async (req) => {
             assignee: issue.fields.assignee
                 ? { displayName: issue.fields.assignee.displayName, avatarUrl: issue.fields.assignee.avatarUrls?.['24x24'] ?? null }
                 : null,
-            // sprintId from the actual Jira sprint field — source of truth for column placement
+            // sprintId is null when the epic has no sprint on this board → goes to backlog
             sprintId: activeSprint ? String(activeSprint.id) : null,
             focusArea,
         };
     });
 });
 
-// Fetch completion counts for a list of epics in a single JQL query.
+// Fetch completion counts for a list of epics.
 // Returns { [epicKey]: { total, done } }.
 // Handles both classic projects (Epic Link field) and next-gen (parent field).
 resolver.define('getEpicsProgress', async (req) => {
     const { epicKeys } = req.payload;
     if (!epicKeys?.length) return {};
 
-    // Batch into chunks of 50 to stay within JQL length limits.
-    const CHUNK = 50;
+    // Batch into chunks of 20 to stay within JQL length limits.
+    const CHUNK = 20;
+    const PAGE_SIZE = 100; // Jira Cloud caps maxResults at 100
     const merged = {};
 
     for (let i = 0; i < epicKeys.length; i += CHUNK) {
         const chunk = epicKeys.slice(i, i + CHUNK);
-        const keysJql = chunk.join(',');
+        // Quote each key so hyphens aren't misinterpreted by the JQL parser.
+        const quoted = chunk.map(k => `"${k}"`).join(',');
+        const jql = `issueType != Epic AND (("Epic Link" in (${quoted})) OR (parent in (${quoted})))`;
 
-        const response = await api.asUser().requestJira(route`/rest/api/3/search/jql`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                jql: `issueType != Epic AND ("Epic Link" in (${keysJql}) OR parent in (${keysJql}))`,
-                fields: ['status', 'parent', 'customfield_10014'],
-                maxResults: 1000,
-            }),
-        });
+        let startAt = 0;
+        let fetched = 0;
+        let total = 1; // enter loop at least once
 
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Jira API error ${response.status}: ${text}`);
-        }
+        while (startAt < total) {
+            const response = await api.asUser().requestJira(route`/rest/api/3/search/jql`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ jql, fields: ['status', 'parent', 'customfield_10014'], maxResults: PAGE_SIZE, startAt }),
+            });
 
-        const data = await response.json();
-        for (const issue of data.issues) {
-            // customfield_10014 = Epic Link (classic); parent.key = next-gen parent
-            const epicKey = issue.fields.customfield_10014 ?? issue.fields.parent?.key ?? null;
-            if (!epicKey || !chunk.includes(epicKey)) continue;
-            if (!merged[epicKey]) merged[epicKey] = { total: 0, done: 0 };
-            merged[epicKey].total++;
-            if (issue.fields.status?.statusCategory?.name === 'Done') merged[epicKey].done++;
+            if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`Jira API error ${response.status}: ${text}`);
+            }
+
+            const data = await response.json();
+            total = data.total ?? 0;
+
+            for (const issue of data.issues) {
+                // customfield_10014 = Epic Link (classic); parent.key = next-gen parent
+                const epicKey = issue.fields.customfield_10014 ?? issue.fields.parent?.key ?? null;
+                if (!epicKey || !chunk.includes(epicKey)) continue;
+                if (!merged[epicKey]) merged[epicKey] = { total: 0, done: 0 };
+                merged[epicKey].total++;
+                if (issue.fields.status?.statusCategory?.name === 'Done') merged[epicKey].done++;
+            }
+
+            fetched += data.issues.length;
+            startAt += PAGE_SIZE;
+            if (fetched >= total || data.issues.length === 0) break;
         }
     }
 
@@ -282,9 +304,9 @@ resolver.define('getEpicsProgress', async (req) => {
 });
 
 // Set (or clear) the Focus Area custom field on an epic.
-// Pass value = null to clear it.
+// Pass optionId = null to clear it. Using ID is more reliable than value name.
 resolver.define('updateEpicFocusArea', async (req) => {
-    const { epicKey, fieldId, value } = req.payload;
+    const { epicKey, fieldId, optionId } = req.payload;
 
     const response = await api
         .asUser()
@@ -292,7 +314,7 @@ resolver.define('updateEpicFocusArea', async (req) => {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                fields: { [fieldId]: value ? { value } : null },
+                fields: { [fieldId]: optionId ? { id: optionId } : null },
             }),
         });
 
