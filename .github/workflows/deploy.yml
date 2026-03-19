@@ -32,7 +32,9 @@ jobs:
         run: npm install -g @forge/cli
 
       - name: Deploy to production
-        run: forge deploy -e production --non-interactive
+        run: |
+          forge settings set usage-analytics false
+          forge deploy -e production --non-interactive
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
