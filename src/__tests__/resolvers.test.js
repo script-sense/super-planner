@@ -559,10 +559,10 @@ describe('updateIssueAssignee', () => {
     });
 });
 
-// ── getDoneTransitions ────────────────────────────────────────────────────────
+// ── getTransitions ────────────────────────────────────────────────────────────
 
-describe('getDoneTransitions', () => {
-    test('returns all done-category transitions', async () => {
+describe('getTransitions', () => {
+    test('returns all transitions as id+name pairs', async () => {
         mockRequestJira.mockResolvedValueOnce(makeRes(true, {
             transitions: [
                 { id: '11', name: 'In Progress', to: { statusCategory: { key: 'indeterminate' } } },
@@ -570,23 +570,20 @@ describe('getDoneTransitions', () => {
                 { id: '32', name: 'Closed',       to: { statusCategory: { key: 'done' } } },
             ],
         }));
-        const result = await call('getDoneTransitions', { epicKey: 'NH-1' });
-        expect(result).toHaveLength(2);
-        expect(result[0]).toEqual({ id: '31', name: 'Done' });
-        expect(result[1]).toEqual({ id: '32', name: 'Closed' });
+        const result = await call('getTransitions', { epicKey: 'NH-1' });
+        expect(result).toHaveLength(3);
+        expect(result[0]).toEqual({ id: '11', name: 'In Progress' });
+        expect(result[2]).toEqual({ id: '32', name: 'Closed' });
     });
 
-    test('returns empty array when no done transitions exist', async () => {
-        mockRequestJira.mockResolvedValueOnce(makeRes(true, {
-            transitions: [{ id: '11', name: 'Todo', to: { statusCategory: { key: 'new' } } }],
-        }));
-        const result = await call('getDoneTransitions', { epicKey: 'NH-1' });
-        expect(result).toEqual([]);
+    test('returns empty array when no transitions exist', async () => {
+        mockRequestJira.mockResolvedValueOnce(makeRes(true, { transitions: [] }));
+        expect(await call('getTransitions', { epicKey: 'NH-1' })).toEqual([]);
     });
 
     test('throws on API error', async () => {
         mockRequestJira.mockResolvedValueOnce(makeRes(false, {}, 'not found'));
-        await expect(call('getDoneTransitions', { epicKey: 'NH-1' })).rejects.toThrow('Jira API error');
+        await expect(call('getTransitions', { epicKey: 'NH-1' })).rejects.toThrow('Jira API error');
     });
 });
 

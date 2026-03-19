@@ -396,7 +396,7 @@ resolver.define('updateIssueAssignee', async (req) => {
 
 // Transition an epic to Done. Fetches available transitions, finds the one that moves
 // to the Done status category, then executes it.
-resolver.define('getDoneTransitions', async (req) => {
+resolver.define('getTransitions', async (req) => {
     const { epicKey } = req.payload;
     const transRes = await api.asUser().requestJira(route`/rest/api/3/issue/${epicKey}/transitions`);
     if (!transRes.ok) {
@@ -404,9 +404,7 @@ resolver.define('getDoneTransitions', async (req) => {
         throw new Error(`Jira API error ${transRes.status}: ${text}`);
     }
     const { transitions } = await transRes.json();
-    return transitions
-        .filter(t => t.to?.statusCategory?.key === 'done')
-        .map(t => ({ id: t.id, name: t.name }));
+    return transitions.map(t => ({ id: t.id, name: t.name }));
 });
 
 resolver.define('transitionEpicDone', async (req) => {
