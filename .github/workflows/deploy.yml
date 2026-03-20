@@ -4,6 +4,14 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'src/**'
+      - 'static/planner-ui/src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'static/planner-ui/package.json'
+      - 'static/planner-ui/package-lock.json'
+      - 'manifest.yml'
 
 jobs:
   test-and-build:
