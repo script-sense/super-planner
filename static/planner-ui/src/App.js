@@ -894,9 +894,12 @@ function PlanningGrid({ epics, sprints, selectedPriorities, focusAreaField, focu
     const [collapsedSections, setCollapsedSections] = useState(new Set());
     const [localCellOrders, setLocalCellOrders] = useState({});
     const [expandedEpic, setExpandedEpic] = useState(null);
-    const [collapsedSprints, setCollapsedSprints] = useState(() =>
-        new Set(sprints.filter(s => s.state === 'closed').map(s => s.id))
-    );
+    const [collapsedSprints, setCollapsedSprints] = useState(new Set());
+    const [showHistory, setShowHistory] = useState(false);
+
+    const pastSprints = sprints.filter(s => s.state === 'closed');
+    const gridSprints = showHistory ? sprints : sprints.filter(s => s.state !== 'closed');
+
     const scrollRef = useRef(null);
 
     function toggleSprintCollapse(id) {
@@ -920,13 +923,13 @@ function PlanningGrid({ epics, sprints, selectedPriorities, focusAreaField, focu
         useSensor(TouchSensor, { activationConstraint: { distance: 5 } }),
     );
 
-    const days          = computeCalendarDays(sprints);
+    const days          = computeCalendarDays(gridSprints);
     const numDays       = days.length;
     const quarterGroups = computeQuarterGroups(days);
     const monthGroups   = computeMonthGroups(days);
 
     const sprintSpans = {};
-    for (const s of sprints) sprintSpans[s.id] = sprintDaySpan(s, days);
+    for (const s of gridSprints) sprintSpans[s.id] = sprintDaySpan(s, days);
 
     // One section per focus area option + unassigned at end.
     // If no focus area field, a single unnamed section shows everything.
@@ -935,12 +938,12 @@ function PlanningGrid({ epics, sprints, selectedPriorities, focusAreaField, focu
         ? [...focusAreaOptions.map(v => ({ key: v, label: v })), { key: UNASSIGNED_KEY, label: 'No Focus Area' }]
         : [{ key: UNASSIGNED_KEY, label: null }];
 
-    const gridData = buildGridData(epics, sprints, positions, sections, localCellOrders);
+    const gridData = buildGridData(epics, gridSprints, positions, sections, localCellOrders);
 
     const HEADER_ROWS = 4;
     const rowsPerSection = visibleRows.length + (hasSections ? 1 : 0); // section header row + priority rows
 
-    const colLayout = computeColumnLayout(sprints, sprintSpans, numDays, collapsedSprints);
+    const colLayout = computeColumnLayout(gridSprints, sprintSpans, numDays, collapsedSprints);
 
     // Scroll to active sprint on first render
     useEffect(() => {
@@ -1084,7 +1087,7 @@ function PlanningGrid({ epics, sprints, selectedPriorities, focusAreaField, focu
                             <div style={{ ...rowLabelStyle(row), gridRow: dataRow, gridColumn: 1 }}>
                                 {row.label}
                             </div>
-                            {sprints.map(s => {
+                            {gridSprints.map(s => {
                                 const pos = colLayout.sprintGridPos[s.id];
                                 const gridCol = pos ? `${pos.col + 1} / span ${pos.span}` : '2';
                                 const isCollapsed = collapsedSprints.has(s.id);
@@ -1152,6 +1155,29 @@ function PlanningGrid({ epics, sprints, selectedPriorities, focusAreaField, focu
                 >
                     <div style={cornerStyle} />
 
+                    {pastSprints.length > 0 && (
+                        <div
+                            onClick={() => setShowHistory(h => !h)}
+                            title={showHistory ? 'Hide past sprints' : `Show ${pastSprints.length} past sprint${pastSprints.length !== 1 ? 's' : ''}`}
+                            style={{
+                                gridRow: 4, gridColumn: 1,
+                                position: 'sticky', top: HDR_TOP_S, left: 0, zIndex: 3,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                background: showHistory ? '#e8eaf0' : '#f0f1f4',
+                                borderTop: '1px solid #ccc',
+                                borderRight: '1px solid #ccc',
+                                cursor: 'pointer',
+                                fontSize: 11,
+                                color: '#42526E',
+                                fontWeight: 600,
+                                gap: 4,
+                                userSelect: 'none',
+                            }}
+                        >
+                            {showHistory ? '‹ Hide' : `${pastSprints.length} past ›`}
+                        </div>
+                    )}
+
                     {/* Row 1 — Quarters (sticky top) */}
                     {quarterGroups.map((q, i) => {
                         const pos = groupToGridPos(q, colLayout.dayToCol);
@@ -1198,7 +1224,7 @@ function PlanningGrid({ epics, sprints, selectedPriorities, focusAreaField, focu
                     })}
 
                     {/* Row 4 — Sprint names (sticky top) */}
-                    {sprints.map(s => {
+                    {gridSprints.map(s => {
                         const pos = colLayout.sprintGridPos[s.id];
                         const isCollapsed = collapsedSprints.has(s.id);
                         const gridCol = pos ? `${pos.col + 1} / span ${pos.span}` : '2';
