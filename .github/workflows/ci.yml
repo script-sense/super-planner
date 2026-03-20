@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  pull_request:
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            static/planner-ui/package-lock.json
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install frontend dependencies
+        working-directory: static/planner-ui
+        run: npm ci
+
+      - name: Run backend tests
+        run: npm test
+
+      - name: Run frontend tests
+        working-directory: static/planner-ui
+        run: npm test
+
+      - name: Build frontend
+        working-directory: static/planner-ui
+        run: npm run build
