@@ -7,16 +7,17 @@ const FOCUS_AREA_FIELD_NAME = 'Focus Area';
 // cannot access the field configuration APIs (common for non-admin users).
 async function discoverFocusAreaFromIssues(fieldIdHint = null) {
     const base = (fieldId) => ({ fieldId, contextId: null, options: [], readOnly: true });
-    const normalizeOption = (opt) => ({
+    const normalizeOption = (opt, index = null) => ({
         id: opt.id ?? opt.value ?? opt.name ?? String(opt.id ?? opt.value),
         value: opt.value ?? opt.name ?? String(opt.id ?? opt.value),
-        position: opt.position ?? opt.order ?? null,
+        position: opt.position ?? opt.order ?? index ?? null, // preserve API order when position is absent
     });
 
     try {
         let fieldId = fieldIdHint;
         let nextPageToken = undefined;
         let page = 0;
+        const MAX_PAGES = 10; // safety cap to avoid unbounded pagination
         const collected = new Map(); // preserve discovery order from issues
 
         do {
@@ -24,7 +25,7 @@ async function discoverFocusAreaFromIssues(fieldIdHint = null) {
                 jql: 'issuetype = Epic ORDER BY created DESC',
                 fields: ['*all'],
                 expand: ['names'],
-                maxResults: 50,
+                maxResults: 100,
             };
             if (nextPageToken) body.nextPageToken = nextPageToken;
 
@@ -65,7 +66,7 @@ async function discoverFocusAreaFromIssues(fieldIdHint = null) {
                 if (!Array.isArray(allowedValues) || allowedValues.length === 0) continue;
 
                 const options = allowedValues
-                    .map(normalizeOption)
+                    .map((opt, idx) => normalizeOption(opt, idx))
                     .sort((a, b) => (a.position ?? Number.MAX_SAFE_INTEGER) - (b.position ?? Number.MAX_SAFE_INTEGER))
                     .map(({ position, ...rest }) => rest);
 
@@ -74,7 +75,7 @@ async function discoverFocusAreaFromIssues(fieldIdHint = null) {
 
             nextPageToken = searchData.nextPageToken ?? null;
             page += 1;
-        } while (nextPageToken && page < 3);
+        } while (nextPageToken && page < MAX_PAGES);
 
         if (collected.size > 0) {
             return { ...base(fieldId), options: [...collected.values()].map(({ position, ...rest }) => rest) };
