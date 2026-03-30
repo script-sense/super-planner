@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { invoke, requestJira, view, router } from '@forge/bridge';
 import {
     ROWS, VALID_PRIORITY_KEYS, BACKLOG_COLUMN, UNASSIGNED_KEY, MS_PER_DAY,
@@ -896,7 +896,17 @@ function PlanningGrid({ epics, sprints, selectedPriorities, focusAreaField, focu
     const [expandedEpic, setExpandedEpic] = useState(null);
     const [collapsedSprints, setCollapsedSprints] = useState(new Set());
     const [showHistory, setShowHistory] = useState(false);
-    const canEditFocusAreas = Array.isArray(focusAreaField?.options) && !focusAreaField?.readOnly;
+    const canEditFocusAreas = !!focusAreaField?.fieldId;
+    const focusAreaIdByValue = useMemo(() => {
+        const map = new Map();
+        if (Array.isArray(focusAreaField?.options)) {
+            focusAreaField.options.forEach(opt => map.set(opt.value, opt.id));
+        }
+        epics.forEach(epic => {
+            if (epic.focusArea && epic.focusAreaId) map.set(epic.focusArea, epic.focusAreaId);
+        });
+        return map;
+    }, [focusAreaField, epics]);
 
     const pastSprints = sprints.filter(s => s.state === 'closed');
     const gridSprints = showHistory ? sprints : sprints.filter(s => s.state !== 'closed');
@@ -973,15 +983,14 @@ function PlanningGrid({ epics, sprints, selectedPriorities, focusAreaField, focu
         const currentKey = epic?.focusArea ?? UNASSIGNED_KEY;
         if (focusAreaField && canEditFocusAreas && sectionKey !== currentKey) {
             const newFocusArea = sectionKey === UNASSIGNED_KEY ? null : sectionKey;
-            const option = focusAreaField.options.find(o => o.value === sectionKey);
-            onFocusAreaChange(activeId, newFocusArea);
+            const optionId = newFocusArea ? focusAreaIdByValue.get(newFocusArea) ?? null : null;
+            onFocusAreaChange(activeId, newFocusArea, optionId);
             invoke('updateEpicFocusArea', {
                 epicKey: activeId,
                 fieldId: focusAreaField.fieldId,
-                optionId: option?.id ?? null,
+                optionId,
+                value: newFocusArea,
             }).catch(err => console.error('Failed to update focus area:', err));
-        } else if (focusAreaField && !canEditFocusAreas && sectionKey !== currentKey) {
-            console.warn('Focus Areas are read-only for your permissions');
         }
     }
 
@@ -1428,12 +1437,14 @@ function SortableOptionRow({ opt, epics, deletingId, onDelete }) {
 }
 
 function FocusAreaSettings({ focusAreaField, epics, onFieldChange }) {
+    if (!Array.isArray(focusAreaField?.options)) return null;
     const [open, setOpen] = useState(false);
     const [newValue, setNewValue] = useState('');
     const [adding, setAdding] = useState(false);
     const [deletingId, setDeletingId] = useState(null);
     const [localError, setLocalError] = useState(null);
     const wrapperRef = useRef(null);
+    const opts = focusAreaField.options;
 
     const sortSensors = useSensors(
         useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
@@ -1452,7 +1463,6 @@ function FocusAreaSettings({ focusAreaField, epics, onFieldChange }) {
 
     function handleSortEnd({ active, over }) {
         if (!over || active.id === over.id) return;
-        const opts = focusAreaField.options;
         const oldIndex = opts.findIndex(o => o.id === active.id);
         const newIndex = opts.findIndex(o => o.id === over.id);
         const reordered = arrayMove(opts, oldIndex, newIndex);
@@ -1533,12 +1543,12 @@ function FocusAreaSettings({ focusAreaField, epics, onFieldChange }) {
             {open && (
                 <div style={settingsPanelStyle}>
                     <div style={{ fontWeight: 'bold', fontSize: 13, marginBottom: 8 }}>Focus Area Options</div>
-                    {focusAreaField.options.length === 0 && (
+                    {opts.length === 0 && (
                         <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>No options yet.</div>
                     )}
                     <DndContext sensors={sortSensors} collisionDetection={closestCenter} onDragEnd={handleSortEnd}>
-                        <SortableContext items={focusAreaField.options.map(o => o.id)} strategy={verticalListSortingStrategy}>
-                            {focusAreaField.options.map(opt => (
+                        <SortableContext items={opts.map(o => o.id)} strategy={verticalListSortingStrategy}>
+                            {opts.map(opt => (
                                 <SortableOptionRow
                                     key={opt.id}
                                     opt={opt}
@@ -1811,7 +1821,7 @@ function App() {
                         padding: '4px 8px',
                         whiteSpace: 'nowrap',
                     }}>
-                        Focus Areas are read-only for your permissions
+                        Focus Area options can't be managed with your permissions
                     </span>
                 )}
                 {canManageFocusAreas && (
@@ -1846,9 +1856,9 @@ function App() {
                         selectedPriorities={selectedPriorities}
                         focusAreaField={focusAreaField}
                         focusAreaOptions={focusAreaOptions}
-                        onFocusAreaChange={(epicKey, value) => {
+                        onFocusAreaChange={(epicKey, value, optionId) => {
                             setEpics(prev => prev.map(e =>
-                                e.key === epicKey ? { ...e, focusArea: value } : e
+                                e.key === epicKey ? { ...e, focusArea: value, focusAreaId: optionId ?? null } : e
                             ));
                         }}
                         onEpicDone={(epicKey) => {
