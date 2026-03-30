@@ -28,6 +28,15 @@ async function discoverFocusAreaFromIssues(fieldIdHint = null) {
 
         const base = { fieldId, contextId: null, options: [], readOnly: true };
         const issues = searchData.issues ?? [];
+        const optionMap = new Map();
+
+        const addOption = (opt) => {
+            if (!opt) return;
+            const value = opt.value ?? opt.name ?? opt;
+            if (!value || optionMap.has(value)) return;
+            const id = opt.id ?? opt.value ?? value;
+            optionMap.set(value, { id, value });
+        };
 
         for (const issue of issues) {
             const issueId = issue.id ?? issue.key;
@@ -40,17 +49,18 @@ async function discoverFocusAreaFromIssues(fieldIdHint = null) {
             const allowedValues = editMeta.fields?.[fieldId]?.allowedValues;
             if (!Array.isArray(allowedValues)) continue;
 
-            return {
-                ...base,
-                options: allowedValues.map(opt => ({
-                    id: opt.id ?? opt.value,
-                    value: opt.value ?? opt.name ?? String(opt.id),
-                })),
-            };
+            allowedValues.forEach(addOption);
+            return { ...base, options: Array.from(optionMap.values()) };
         }
 
-        // Could not read options, but we still know the field exists.
-        return base;
+        // Could not read options from editmeta, but we still know the field exists.
+        // Fall back to any Focus Area values present on the returned issues.
+        for (const issue of issues) {
+            const fieldVal = issue.fields?.[fieldId];
+            if (Array.isArray(fieldVal)) fieldVal.forEach(addOption);
+            else addOption(fieldVal);
+        }
+        return { ...base, options: Array.from(optionMap.values()) };
     } catch (err) {
         return fieldIdHint ? { fieldId: fieldIdHint, contextId: null, options: [], readOnly: true } : null;
     }
@@ -163,7 +173,11 @@ resolver.define('getFocusAreaField', async () => {
         throw new Error(`Jira API error ${optRes.status}: ${text}`);
     }
     const optData = await optRes.json();
-    return { ...base, contextId, options: (optData.values ?? []).map(o => ({ id: o.id, value: o.value })) };
+    const rawOptions = optData.values ?? [];
+    const ordered = rawOptions.some(o => o?.position != null)
+        ? [...rawOptions].sort((a, b) => (Number(a.position) || 0) - (Number(b.position) || 0))
+        : rawOptions;
+    return { ...base, contextId, options: ordered.map(o => ({ id: o.id, value: o.value })) };
 });
 
 // Add a new option to the Focus Area field context.

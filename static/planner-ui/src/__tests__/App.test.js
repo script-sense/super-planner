@@ -237,6 +237,24 @@ describe('App smoke tests', () => {
         );
     });
 
+    test('uses epic focus areas when field options are empty', async () => {
+        setupInvokeMocks({
+            getFocusAreaField: Promise.resolve({ fieldId: null, contextId: null, options: [] }),
+            getEpics: Promise.resolve([
+                makeEpicData('NH-1', 'High', 101),
+                { ...makeEpicData('NH-3'), focusArea: 'Security' },
+            ]),
+        });
+        const App = require('../App').default;
+        await act(async () => {
+            render(<App />);
+        });
+        // Wait for grid to render
+        await waitFor(() => expect(screen.getByTestId('dnd-context')).toBeInTheDocument());
+        // Focus area section header should appear from epic data
+        expect(screen.getAllByText('Security').length).toBeGreaterThan(0);
+    });
+
     test('priority chip toggle stays active (at least one always selected)', async () => {
         setupInvokeMocks();
         const App = require('../App').default;

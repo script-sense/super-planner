@@ -944,7 +944,7 @@ function PlanningGrid({ epics, sprints, selectedPriorities, focusAreaField, focu
 
     // One section per focus area option + unassigned at end.
     // If no focus area field, a single unnamed section shows everything.
-    const hasSections = focusAreaField && focusAreaOptions.length > 0;
+    const hasSections = focusAreaOptions.length > 0;
     const sections = hasSections
         ? [...focusAreaOptions.map(v => ({ key: v, label: v })), { key: UNASSIGNED_KEY, label: 'No Focus Area' }]
         : [{ key: UNASSIGNED_KEY, label: null }];
@@ -1732,9 +1732,10 @@ function App() {
     if (error) return <div>Error: {error}</div>;
 
     // Use authoritative options from the field definition; fall back to values in epics.
-    const focusAreaOptions = Array.isArray(focusAreaField?.options)
+    const epicFocusAreas = epics ? [...new Set(epics.map(e => e.focusArea).filter(Boolean))] : [];
+    const focusAreaOptions = (Array.isArray(focusAreaField?.options) && focusAreaField.options.length > 0)
         ? focusAreaField.options.map(o => o.value)
-        : (epics ? [...new Set(epics.map(e => e.focusArea).filter(Boolean))] : []);
+        : epicFocusAreas;
     const showFocusAreaSettings = Array.isArray(focusAreaField?.options);
 
     // Derive sorted project list from loaded epics — no extra resolver needed.

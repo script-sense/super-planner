@@ -298,6 +298,48 @@ describe('getFocusAreaField', () => {
         });
     });
 
+    test('derives options from issue data when editmeta is forbidden', async () => {
+        mockRequestJira
+            .mockResolvedValueOnce(makeRes(true, [{ id: 'cf_10', name: 'Focus Area', custom: true }]))
+            .mockResolvedValueOnce(makeRes(false, null, 'Forbidden', 403)) // context fetch
+            .mockResolvedValueOnce(makeRes(true, {
+                names: { cf_10: 'Focus Area' },
+                issues: [{ id: '2001', fields: { cf_10: { id: 'opt_a', value: 'Alpha' } } }],
+            }))
+            .mockResolvedValueOnce(makeRes(false, null, 'Forbidden', 403)); // editmeta forbidden
+
+        expect(await call('getFocusAreaField')).toEqual({
+            fieldId: 'cf_10',
+            contextId: null,
+            options: [{ id: 'opt_a', value: 'Alpha' }],
+            readOnly: true,
+        });
+    });
+
+    test('orders options by position when returned by Jira', async () => {
+        mockRequestJira
+            .mockResolvedValueOnce(makeRes(true, [{ id: 'cf_10', name: 'Focus Area', custom: true }]))
+            .mockResolvedValueOnce(makeRes(true, { values: [{ id: 'ctx_1' }] }))
+            .mockResolvedValueOnce(makeRes(true, {
+                values: [
+                    { id: 'opt_c', value: 'Gamma', position: 2 },
+                    { id: 'opt_a', value: 'Alpha', position: 0 },
+                    { id: 'opt_b', value: 'Beta',  position: 1 },
+                ],
+            }));
+
+        expect(await call('getFocusAreaField')).toEqual({
+            fieldId: 'cf_10',
+            contextId: 'ctx_1',
+            options: [
+                { id: 'opt_a', value: 'Alpha' },
+                { id: 'opt_b', value: 'Beta' },
+                { id: 'opt_c', value: 'Gamma' },
+            ],
+            readOnly: false,
+        });
+    });
+
     test('throws on fields API error', async () => {
         mockRequestJira.mockResolvedValueOnce(makeRes(false, null, 'error'));
         await expect(call('getFocusAreaField')).rejects.toThrow('Jira API error');
