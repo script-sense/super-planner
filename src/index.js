@@ -69,6 +69,7 @@ resolver.define('getSprints', async (req) => {
 // Returns { fieldId, contextId, options: [{ id, value }] } or null if not found.
 resolver.define('getFocusAreaField', async () => {
     const fieldsRes = await api.asUser().requestJira(route`/rest/api/3/field`);
+    if (fieldsRes.status === 403) return null; // user cannot access custom field config
     if (!fieldsRes.ok) {
         const text = await fieldsRes.text();
         throw new Error(`Jira API error ${fieldsRes.status}: ${text}`);
@@ -80,6 +81,7 @@ resolver.define('getFocusAreaField', async () => {
     const fieldId = field.id;
 
     const ctxRes = await api.asUser().requestJira(route`/rest/api/3/field/${fieldId}/context?maxResults=1`);
+    if (ctxRes.status === 403) return null; // lacking permission to view context
     if (!ctxRes.ok) {
         const text = await ctxRes.text();
         throw new Error(`Jira API error ${ctxRes.status}: ${text}`);
@@ -91,6 +93,7 @@ resolver.define('getFocusAreaField', async () => {
     const contextId = context.id;
 
     const optRes = await api.asUser().requestJira(route`/rest/api/3/field/${fieldId}/context/${contextId}/option?maxResults=100`);
+    if (optRes.status === 403) return null; // lacking permission to view options
     if (!optRes.ok) {
         const text = await optRes.text();
         throw new Error(`Jira API error ${optRes.status}: ${text}`);

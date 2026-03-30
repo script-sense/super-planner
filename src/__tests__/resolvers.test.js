@@ -49,9 +49,10 @@ require('../index');
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Build a minimal successful or failed mock response */
-function makeRes(ok, data, errorText = 'API error') {
+function makeRes(ok, data, errorText = 'API error', status = ok ? 200 : 500) {
     return {
         ok,
+        status,
         json: () => Promise.resolve(data),
         text: () => Promise.resolve(errorText),
     };
@@ -211,12 +212,24 @@ describe('getFocusAreaField', () => {
         expect(await call('getFocusAreaField')).toBeNull();
     });
 
+    test('returns null when Jira forbids access to field configuration', async () => {
+        mockRequestJira.mockResolvedValueOnce(makeRes(false, null, 'Forbidden', 403));
+        expect(await call('getFocusAreaField')).toBeNull();
+    });
+
     test('returns { fieldId, contextId: null, options: [] } when no context exists', async () => {
         mockRequestJira
             .mockResolvedValueOnce(makeRes(true, [{ id: 'cf_10', name: 'Focus Area', custom: true }]))
             .mockResolvedValueOnce(makeRes(true, { values: [] })); // no context
         const result = await call('getFocusAreaField');
         expect(result).toEqual({ fieldId: 'cf_10', contextId: null, options: [] });
+    });
+
+    test('returns null when context fetch is forbidden', async () => {
+        mockRequestJira
+            .mockResolvedValueOnce(makeRes(true, [{ id: 'cf_10', name: 'Focus Area', custom: true }]))
+            .mockResolvedValueOnce(makeRes(false, null, 'Forbidden', 403));
+        expect(await call('getFocusAreaField')).toBeNull();
     });
 
     test('returns field, context and options', async () => {
@@ -235,6 +248,14 @@ describe('getFocusAreaField', () => {
             contextId: 'ctx_5',
             options: [{ id: 'opt_1', value: 'Backend' }, { id: 'opt_2', value: 'Frontend' }],
         });
+    });
+
+    test('returns null when option fetch is forbidden', async () => {
+        mockRequestJira
+            .mockResolvedValueOnce(makeRes(true, [{ id: 'cf_10', name: 'Focus Area', custom: true }]))
+            .mockResolvedValueOnce(makeRes(true, { values: [{ id: 'ctx_5' }] }))
+            .mockResolvedValueOnce(makeRes(false, null, 'Forbidden', 403));
+        expect(await call('getFocusAreaField')).toBeNull();
     });
 
     test('throws on fields API error', async () => {
