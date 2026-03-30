@@ -30,12 +30,16 @@ async function discoverFocusAreaFromIssues(fieldIdHint = null) {
         const issues = searchData.issues ?? [];
         const optionMap = new Map();
 
-        const addOption = (opt) => {
+        const addOption = (id, value) => {
+            if (!value || optionMap.has(value)) return;
+            optionMap.set(value, { id: id ?? value, value });
+        };
+
+        const addOptionFromFieldValue = (opt) => {
             if (!opt) return;
             const value = opt.value ?? opt.name ?? opt;
-            if (!value || optionMap.has(value)) return;
             const id = opt.id ?? opt.value ?? value;
-            optionMap.set(value, { id, value });
+            addOption(id, value);
         };
 
         for (const issue of issues) {
@@ -49,7 +53,7 @@ async function discoverFocusAreaFromIssues(fieldIdHint = null) {
             const allowedValues = editMeta.fields?.[fieldId]?.allowedValues;
             if (!Array.isArray(allowedValues)) continue;
 
-            allowedValues.forEach(addOption);
+            allowedValues.forEach(addOptionFromFieldValue);
             return { ...base, options: Array.from(optionMap.values()) };
         }
 
@@ -57,8 +61,8 @@ async function discoverFocusAreaFromIssues(fieldIdHint = null) {
         // Fall back to any Focus Area values present on the returned issues.
         for (const issue of issues) {
             const fieldVal = issue.fields?.[fieldId];
-            if (Array.isArray(fieldVal)) fieldVal.forEach(addOption);
-            else addOption(fieldVal);
+            if (Array.isArray(fieldVal)) fieldVal.forEach(addOptionFromFieldValue);
+            else addOptionFromFieldValue(fieldVal);
         }
         return { ...base, options: Array.from(optionMap.values()) };
     } catch (err) {
@@ -175,7 +179,7 @@ resolver.define('getFocusAreaField', async () => {
     const optData = await optRes.json();
     const rawOptions = optData.values ?? [];
     const ordered = rawOptions.some(o => o?.position != null)
-        ? [...rawOptions].sort((a, b) => (Number(a.position) || 0) - (Number(b.position) || 0))
+        ? [...rawOptions].sort((a, b) => (a?.position ?? 0) - (b?.position ?? 0))
         : rawOptions;
     return { ...base, contextId, options: ordered.map(o => ({ id: o.id, value: o.value })) };
 });
