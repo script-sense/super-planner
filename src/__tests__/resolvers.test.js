@@ -259,6 +259,53 @@ describe('getFocusAreaField', () => {
         });
     });
 
+    test('derives options from epic values when allowedValues are unavailable', async () => {
+        mockRequestJira
+            .mockResolvedValueOnce(makeRes(true, [{ id: 'cf_10', name: 'Focus Area', custom: true }]))
+            .mockResolvedValueOnce(makeRes(false, null, 'Forbidden', 403))
+            .mockResolvedValueOnce(makeRes(true, {
+                names: { cf_10: 'Focus Area' },
+                issues: [{ id: '1001', key: 'NH-1', fields: { cf_10: { id: 'opt_1', value: 'Backend' } } }],
+            }))
+            .mockResolvedValueOnce(makeRes(true, { fields: { cf_10: { allowedValues: [] } } }));
+        expect(await call('getFocusAreaField')).toEqual({
+            fieldId: 'cf_10',
+            contextId: null,
+            options: [{ id: 'opt_1', value: 'Backend' }],
+            readOnly: true,
+        });
+    });
+
+    test('paginates discovery to find allowedValues on later pages', async () => {
+        mockRequestJira
+            .mockResolvedValueOnce(makeRes(false, null, 'Forbidden', 403)) // fields endpoint
+            .mockResolvedValueOnce(makeRes(true, {
+                names: { cf_10: 'Focus Area' },
+                issues: [{ id: '2001', key: 'NH-1', fields: { cf_10: { id: 'opt_a', value: 'Alpha' } } }],
+                nextPageToken: 'tok2',
+            }))
+            .mockResolvedValueOnce(makeRes(false, null, 'Forbidden', 403)) // editmeta for issue 2001
+            .mockResolvedValueOnce(makeRes(true, {
+                names: { cf_10: 'Focus Area' },
+                issues: [{ id: '2002', key: 'NH-2', fields: { cf_10: { id: 'opt_b', value: 'Beta' } } }],
+            }))
+            .mockResolvedValueOnce(makeRes(true, {
+                fields: { cf_10: { allowedValues: [
+                    { id: 'opt_y', value: 'Web', position: 1 },
+                    { id: 'opt_x', value: 'Mobile', position: 2 },
+                ] } },
+            }));
+        expect(await call('getFocusAreaField')).toEqual({
+            fieldId: 'cf_10',
+            contextId: null,
+            options: [
+                { id: 'opt_y', value: 'Web' },
+                { id: 'opt_x', value: 'Mobile' },
+            ],
+            readOnly: true,
+        });
+    });
+
     test('returns field, context and options', async () => {
         mockRequestJira
             .mockResolvedValueOnce(makeRes(true, [{ id: 'cf_10', name: 'Focus Area', custom: true }]))
@@ -274,6 +321,28 @@ describe('getFocusAreaField', () => {
             fieldId: 'cf_10',
             contextId: 'ctx_5',
             options: [{ id: 'opt_1', value: 'Backend' }, { id: 'opt_2', value: 'Frontend' }],
+            readOnly: false,
+        });
+    });
+
+    test('sorts context options by position', async () => {
+        mockRequestJira
+            .mockResolvedValueOnce(makeRes(true, [{ id: 'cf_10', name: 'Focus Area', custom: true }]))
+            .mockResolvedValueOnce(makeRes(true, { values: [{ id: 'ctx_5' }] }))
+            .mockResolvedValueOnce(makeRes(true, {
+                values: [
+                    { id: 'opt_2', value: 'B', position: 2 },
+                    { id: 'opt_1', value: 'A', position: 1 },
+                ],
+            }));
+        const result = await call('getFocusAreaField');
+        expect(result).toEqual({
+            fieldId: 'cf_10',
+            contextId: 'ctx_5',
+            options: [
+                { id: 'opt_1', value: 'A' },
+                { id: 'opt_2', value: 'B' },
+            ],
             readOnly: false,
         });
     });

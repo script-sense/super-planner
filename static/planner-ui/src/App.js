@@ -1732,8 +1732,11 @@ function App() {
     if (error) return <div>Error: {error}</div>;
 
     // Use authoritative options from the field definition; fall back to values in epics.
-    const focusAreaOptions = Array.isArray(focusAreaField?.options)
+    const focusAreaOptionsFromField = Array.isArray(focusAreaField?.options)
         ? focusAreaField.options.map(o => o.value)
+        : null;
+    const focusAreaOptions = (focusAreaOptionsFromField && focusAreaOptionsFromField.length > 0)
+        ? focusAreaOptionsFromField
         : (epics ? [...new Set(epics.map(e => e.focusArea).filter(Boolean))] : []);
     const showFocusAreaSettings = Array.isArray(focusAreaField?.options);
 
