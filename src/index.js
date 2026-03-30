@@ -35,7 +35,7 @@ async function discoverFocusAreaFromIssues(fieldIdHint = null) {
             optionMap.set(value, { id: id ?? value, value });
         };
 
-        const addOptionFromFieldValue = (opt) => {
+        const addOptionFromValue = (opt) => {
             if (!opt) return;
             const value = opt.value ?? opt.name ?? opt;
             const id = opt.id ?? opt.value ?? value;
@@ -53,7 +53,7 @@ async function discoverFocusAreaFromIssues(fieldIdHint = null) {
             const allowedValues = editMeta.fields?.[fieldId]?.allowedValues;
             if (!Array.isArray(allowedValues)) continue;
 
-            allowedValues.forEach(addOptionFromFieldValue);
+            allowedValues.forEach(addOptionFromValue);
             if (optionMap.size > 0) return { ...base, options: Array.from(optionMap.values()) };
         }
 
@@ -61,8 +61,8 @@ async function discoverFocusAreaFromIssues(fieldIdHint = null) {
         // Fall back to any Focus Area values present on the returned issues.
         for (const issue of issues) {
             const fieldVal = issue.fields?.[fieldId];
-            if (Array.isArray(fieldVal)) fieldVal.forEach(addOptionFromFieldValue);
-            else addOptionFromFieldValue(fieldVal);
+            if (Array.isArray(fieldVal)) fieldVal.forEach(addOptionFromValue);
+            else addOptionFromValue(fieldVal);
         }
         return { ...base, options: Array.from(optionMap.values()) };
     } catch (err) {
@@ -180,14 +180,14 @@ resolver.define('getFocusAreaField', async () => {
     const rawOptions = optData.values ?? [];
     const ordered = rawOptions.some(o => o?.position != null)
         ? [...rawOptions]
-            .map((o, idx) => ({ ...o, __idx: idx }))
-            .sort((a, b) => {
+            .map((o, idx) => [o, idx])
+            .sort(([a, ai], [b, bi]) => {
                 const pa = a?.position ?? Number.MAX_SAFE_INTEGER;
                 const pb = b?.position ?? Number.MAX_SAFE_INTEGER;
                 if (pa !== pb) return pa - pb;
-                return a.__idx - b.__idx;
+                return ai - bi;
             })
-            .map(({ __idx, ...rest }) => rest)
+            .map(([o]) => o)
         : rawOptions;
     return { ...base, contextId, options: ordered.map(o => ({ id: o.id, value: o.value })) };
 });

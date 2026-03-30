@@ -8,7 +8,7 @@
  */
 
 import React from 'react';
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor, act, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom';
 
@@ -252,7 +252,8 @@ describe('App smoke tests', () => {
         // Wait for grid to render
         await waitFor(() => expect(screen.getByTestId('dnd-context')).toBeInTheDocument());
         // Focus area section header should appear from epic data
-        expect(screen.getAllByText('Security').length).toBeGreaterThan(0);
+        const grid = screen.getByTestId('dnd-context');
+        expect(within(grid).getAllByText('Security').length).toBeGreaterThan(0);
     });
 
     test('priority chip toggle stays active (at least one always selected)', async () => {
