@@ -1,9 +1,9 @@
 services:
   dev:
     build: .
-    image: neblar/jira-planner:v1
+    image: script-sense/super-planner:v1
     # We do not want to recreate the container or have multiple instances of it running ever
-    container_name: neblar-jira-planner
+    container_name: script-sense-super-planner
     volumes:
       # Mount SSH Keys as readonly
       - ~/.ssh:/root/.ssh:ro
