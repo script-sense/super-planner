@@ -1398,9 +1398,11 @@ const settingsOptionRowStyle = {
     fontSize: 13,
 };
 
-function SortableOptionRow({ opt, epics, deletingId, onDelete }) {
-    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: opt.id });
+function SortableOptionRow({ opt, epics, deletingId, onDelete, readOnly }) {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: opt.id, disabled: readOnly });
     const inUse = (epics ?? []).filter(e => e.focusArea === opt.value).length;
+    const dragAttrs = readOnly ? {} : attributes;
+    const dragListeners = readOnly ? {} : listeners;
     return (
         <div
             ref={setNodeRef}
@@ -1413,10 +1415,17 @@ function SortableOptionRow({ opt, epics, deletingId, onDelete }) {
             }}
         >
             <span
-                {...listeners}
-                {...attributes}
-                title="Drag to reorder"
-                style={{ cursor: 'grab', color: '#aaa', fontSize: 14, padding: '0 4px 0 0', lineHeight: 1 }}
+                {...dragListeners}
+                {...dragAttrs}
+                title={readOnly ? 'Reorder disabled' : 'Drag to reorder'}
+                style={{
+                    cursor: readOnly ? 'not-allowed' : 'grab',
+                    color: '#aaa',
+                    fontSize: 14,
+                    padding: '0 4px 0 0',
+                    lineHeight: 1,
+                    opacity: readOnly ? 0.5 : 1,
+                }}
             >
                 ⠿
             </span>
@@ -1426,9 +1435,16 @@ function SortableOptionRow({ opt, epics, deletingId, onDelete }) {
             </span>
             <button
                 onClick={() => onDelete(opt)}
-                disabled={!!deletingId}
-                style={{ background: 'none', border: 'none', color: '#c9372c', cursor: 'pointer', fontSize: 13, padding: '0 4px' }}
-                title="Delete option"
+                disabled={readOnly || !!deletingId}
+                style={{
+                    background: 'none',
+                    border: 'none',
+                    color: readOnly ? '#ccc' : '#c9372c',
+                    cursor: readOnly ? 'not-allowed' : 'pointer',
+                    fontSize: 13,
+                    padding: '0 4px',
+                }}
+                title={readOnly ? 'Delete disabled' : 'Delete option'}
             >
                 {deletingId === opt.id ? '…' : '✕'}
             </button>
@@ -1445,6 +1461,7 @@ function FocusAreaSettings({ focusAreaField, epics, onFieldChange }) {
     const [localError, setLocalError] = useState(null);
     const wrapperRef = useRef(null);
     const opts = focusAreaField.options;
+    const readOnly = !!focusAreaField.readOnly || !focusAreaField.contextId;
 
     const sortSensors = useSensors(
         useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
@@ -1462,6 +1479,7 @@ function FocusAreaSettings({ focusAreaField, epics, onFieldChange }) {
     }, [open]);
 
     function handleSortEnd({ active, over }) {
+        if (readOnly) return;
         if (!over || active.id === over.id) return;
         const oldIndex = opts.findIndex(o => o.id === active.id);
         const newIndex = opts.findIndex(o => o.id === over.id);
@@ -1492,6 +1510,7 @@ function FocusAreaSettings({ focusAreaField, epics, onFieldChange }) {
     }
 
     function handleAdd() {
+        if (readOnly) return;
         const value = newValue.trim();
         if (!value) return;
         setAdding(true);
@@ -1510,6 +1529,7 @@ function FocusAreaSettings({ focusAreaField, epics, onFieldChange }) {
     }
 
     function handleDelete(opt) {
+        if (readOnly) return;
         const inUse = (epics ?? []).filter(e => e.focusArea === opt.value).length;
         if (inUse > 0 && !window.confirm(`"${opt.value}" is used by ${inUse} epic${inUse > 1 ? 's' : ''}. Delete anyway?`)) return;
         setDeletingId(opt.id);
@@ -1546,6 +1566,11 @@ function FocusAreaSettings({ focusAreaField, epics, onFieldChange }) {
                     {opts.length === 0 && (
                         <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>No options yet.</div>
                     )}
+                    {readOnly && (
+                        <div style={{ fontSize: 12, color: '#6b778c', marginBottom: 8 }}>
+                            Viewing options only. Reorder/add/delete is disabled with your permissions.
+                        </div>
+                    )}
                     <DndContext sensors={sortSensors} collisionDetection={closestCenter} onDragEnd={handleSortEnd}>
                         <SortableContext items={opts.map(o => o.id)} strategy={verticalListSortingStrategy}>
                             {opts.map(opt => (
@@ -1555,6 +1580,7 @@ function FocusAreaSettings({ focusAreaField, epics, onFieldChange }) {
                                     epics={epics}
                                     deletingId={deletingId}
                                     onDelete={handleDelete}
+                                    readOnly={readOnly}
                                 />
                             ))}
                         </SortableContext>
@@ -1566,12 +1592,20 @@ function FocusAreaSettings({ focusAreaField, epics, onFieldChange }) {
                             onChange={e => setNewValue(e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && handleAdd()}
                             placeholder="New option…"
-                            style={{ flex: 1, fontSize: 13, padding: '3px 6px', border: '1px solid #ccc', borderRadius: 3 }}
+                            disabled={readOnly}
+                            style={{
+                                flex: 1,
+                                fontSize: 13,
+                                padding: '3px 6px',
+                                border: '1px solid #ccc',
+                                borderRadius: 3,
+                                background: readOnly ? '#f4f5f7' : '#fff',
+                            }}
                         />
                         <button
                             onClick={handleAdd}
-                            disabled={adding || !newValue.trim()}
-                            style={{ ...toggleButtonStyle, padding: '3px 10px' }}
+                            disabled={readOnly || adding || !newValue.trim()}
+                            style={{ ...toggleButtonStyle, padding: '3px 10px', opacity: (readOnly || adding || !newValue.trim()) ? 0.6 : 1 }}
                         >
                             {adding ? '…' : 'Add'}
                         </button>
@@ -1698,13 +1732,10 @@ function App() {
     if (error) return <div>Error: {error}</div>;
 
     // Use authoritative options from the field definition; fall back to values in epics.
-    const focusAreaOptions = focusAreaField?.options?.length
+    const focusAreaOptions = Array.isArray(focusAreaField?.options)
         ? focusAreaField.options.map(o => o.value)
-        : (epics ? [...new Set(epics.map(e => e.focusArea).filter(Boolean))].sort() : []);
-    const canManageFocusAreas = !!(focusAreaField
-        && !focusAreaField.readOnly
-        && Array.isArray(focusAreaField.options)
-        && focusAreaField.contextId);
+        : (epics ? [...new Set(epics.map(e => e.focusArea).filter(Boolean))] : []);
+    const showFocusAreaSettings = Array.isArray(focusAreaField?.options);
 
     // Derive sorted project list from loaded epics — no extra resolver needed.
     const projects = epics
@@ -1811,20 +1842,7 @@ function App() {
 
                 {/* Right-side actions */}
                 <div style={{ flex: 1 }} />
-                {focusAreaField?.readOnly && (
-                    <span style={{
-                        fontSize: 12,
-                        color: '#6b778c',
-                        background: '#F4F5F7',
-                        border: '1px solid #DFE1E6',
-                        borderRadius: 4,
-                        padding: '4px 8px',
-                        whiteSpace: 'nowrap',
-                    }}>
-                        Focus Area options can't be managed with your permissions
-                    </span>
-                )}
-                {canManageFocusAreas && (
+                {showFocusAreaSettings && (
                     <FocusAreaSettings
                         focusAreaField={focusAreaField}
                         epics={epics}

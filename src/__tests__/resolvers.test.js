@@ -205,16 +205,31 @@ describe('getFilters', () => {
 // ── getFocusAreaField ─────────────────────────────────────────────────────────
 
 describe('getFocusAreaField', () => {
-    test('returns null when Focus Area field is not found', async () => {
-        mockRequestJira.mockResolvedValueOnce(makeRes(true, [
-            { id: 'cf_1', name: 'Other Field', custom: true },
-        ]));
+    test('returns null when Focus Area field is not found and fallback cannot discover it', async () => {
+        mockRequestJira
+            .mockResolvedValueOnce(makeRes(true, [
+                { id: 'cf_1', name: 'Other Field', custom: true },
+            ]))
+            .mockResolvedValueOnce(makeRes(true, { names: {}, issues: [] }));
         expect(await call('getFocusAreaField')).toBeNull();
     });
 
-    test('returns null when Jira forbids access to field configuration', async () => {
-        mockRequestJira.mockResolvedValueOnce(makeRes(false, null, 'Forbidden', 403));
-        expect(await call('getFocusAreaField')).toBeNull();
+    test('falls back to issue data when Jira forbids access to field configuration', async () => {
+        mockRequestJira
+            .mockResolvedValueOnce(makeRes(false, null, 'Forbidden', 403)) // fields endpoint
+            .mockResolvedValueOnce(makeRes(true, {
+                names: { customfield_123: 'Focus Area' },
+                issues: [{ id: '1001' }],
+            }))
+            .mockResolvedValueOnce(makeRes(true, {
+                fields: { customfield_123: { allowedValues: [{ id: 'opt_1', value: 'Backend' }] } },
+            }));
+        expect(await call('getFocusAreaField')).toEqual({
+            fieldId: 'customfield_123',
+            contextId: null,
+            options: [{ id: 'opt_1', value: 'Backend' }],
+            readOnly: true,
+        });
     });
 
     test('returns { fieldId, contextId: null, options: [] } when no context exists', async () => {
@@ -225,11 +240,23 @@ describe('getFocusAreaField', () => {
         expect(result).toEqual({ fieldId: 'cf_10', contextId: null, options: [], readOnly: false });
     });
 
-    test('returns null when context fetch is forbidden', async () => {
+    test('uses fallback options when context fetch is forbidden', async () => {
         mockRequestJira
             .mockResolvedValueOnce(makeRes(true, [{ id: 'cf_10', name: 'Focus Area', custom: true }]))
-            .mockResolvedValueOnce(makeRes(false, null, 'Forbidden', 403));
-        expect(await call('getFocusAreaField')).toEqual({ fieldId: 'cf_10', contextId: null, options: null, readOnly: true });
+            .mockResolvedValueOnce(makeRes(false, null, 'Forbidden', 403))
+            .mockResolvedValueOnce(makeRes(true, {
+                names: { cf_10: 'Focus Area' },
+                issues: [{ id: '2001' }],
+            }))
+            .mockResolvedValueOnce(makeRes(true, {
+                fields: { cf_10: { allowedValues: [{ id: 'opt_x', value: 'Infra' }] } },
+            }));
+        expect(await call('getFocusAreaField')).toEqual({
+            fieldId: 'cf_10',
+            contextId: null,
+            options: [{ id: 'opt_x', value: 'Infra' }],
+            readOnly: true,
+        });
     });
 
     test('returns field, context and options', async () => {
@@ -251,12 +278,24 @@ describe('getFocusAreaField', () => {
         });
     });
 
-    test('returns null when option fetch is forbidden', async () => {
+    test('uses fallback options when option fetch is forbidden', async () => {
         mockRequestJira
             .mockResolvedValueOnce(makeRes(true, [{ id: 'cf_10', name: 'Focus Area', custom: true }]))
             .mockResolvedValueOnce(makeRes(true, { values: [{ id: 'ctx_5' }] }))
-            .mockResolvedValueOnce(makeRes(false, null, 'Forbidden', 403));
-        expect(await call('getFocusAreaField')).toEqual({ fieldId: 'cf_10', contextId: 'ctx_5', options: null, readOnly: true });
+            .mockResolvedValueOnce(makeRes(false, null, 'Forbidden', 403))
+            .mockResolvedValueOnce(makeRes(true, {
+                names: { cf_10: 'Focus Area' },
+                issues: [{ id: '3001' }],
+            }))
+            .mockResolvedValueOnce(makeRes(true, {
+                fields: { cf_10: { allowedValues: [{ id: 'opt_z', value: 'Mobile' }] } },
+            }));
+        expect(await call('getFocusAreaField')).toEqual({
+            fieldId: 'cf_10',
+            contextId: null,
+            options: [{ id: 'opt_z', value: 'Mobile' }],
+            readOnly: true,
+        });
     });
 
     test('throws on fields API error', async () => {
