@@ -306,6 +306,40 @@ describe('getFocusAreaField', () => {
         });
     });
 
+    test('continues discovery beyond three pages when needed to find allowedValues', async () => {
+        mockRequestJira
+            .mockResolvedValueOnce(makeRes(false, null, 'Forbidden', 403)) // fields endpoint
+            .mockResolvedValueOnce(makeRes(true, { // page 1
+                names: { cf_10: 'Focus Area' },
+                issues: [],
+                nextPageToken: 'tok2',
+            }))
+            .mockResolvedValueOnce(makeRes(true, { // page 2
+                names: { cf_10: 'Focus Area' },
+                issues: [],
+                nextPageToken: 'tok3',
+            }))
+            .mockResolvedValueOnce(makeRes(true, { // page 3
+                names: { cf_10: 'Focus Area' },
+                issues: [],
+                nextPageToken: 'tok4',
+            }))
+            .mockResolvedValueOnce(makeRes(true, { // page 4 — allowedValues reachable here
+                names: { cf_10: 'Focus Area' },
+                issues: [{ id: '4001' }],
+            }))
+            .mockResolvedValueOnce(makeRes(true, { // editmeta for issue 4001
+                fields: { cf_10: { allowedValues: [{ id: 'opt_late', value: 'Later Page' }] } },
+            }));
+        const result = await call('getFocusAreaField');
+        expect(result).toEqual({
+            fieldId: 'cf_10',
+            contextId: null,
+            options: [{ id: 'opt_late', value: 'Later Page' }],
+            readOnly: true,
+        });
+    });
+
     test('returns field, context and options', async () => {
         mockRequestJira
             .mockResolvedValueOnce(makeRes(true, [{ id: 'cf_10', name: 'Focus Area', custom: true }]))
