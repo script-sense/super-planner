@@ -407,16 +407,18 @@ describe('getEpics', () => {
     });
 
     test('includes focusArea when focusAreaFieldId is provided', async () => {
-        const issue = makeIssue('NH-1', { extraFields: { 'customfield_fa': { value: 'Backend' } } });
+        const issue = makeIssue('NH-1', { extraFields: { 'customfield_fa': { id: 'opt-1', value: 'Backend' } } });
         mockRequestJira.mockResolvedValueOnce(makeRes(true, { issues: [issue] }));
         const [epic] = await call('getEpics', { filterId: '10001', focusAreaFieldId: 'customfield_fa', boardSprintIds: [] });
         expect(epic.focusArea).toBe('Backend');
+        expect(epic.focusAreaId).toBe('opt-1');
     });
 
     test('focusArea is null when focusAreaFieldId is null', async () => {
         mockRequestJira.mockResolvedValueOnce(makeRes(true, { issues: [makeIssue('NH-1')] }));
         const [epic] = await call('getEpics', { filterId: '10001', focusAreaFieldId: null, boardSprintIds: [] });
         expect(epic.focusArea).toBeNull();
+        expect(epic.focusAreaId).toBeNull();
     });
 
     test('handles unassigned epics (assignee null)', async () => {
@@ -447,9 +449,16 @@ describe('updateEpicFocusArea', () => {
         expect(body.fields['cf_10']).toEqual({ id: 'opt_5' });
     });
 
+    test('sends value when option id is absent', async () => {
+        mockRequestJira.mockResolvedValueOnce(makeRes(true, {}));
+        await call('updateEpicFocusArea', { epicKey: 'NH-1', fieldId: 'cf_10', optionId: null, value: 'Backend' });
+        const body = JSON.parse(mockRequestJira.mock.calls[0][1].body);
+        expect(body.fields['cf_10']).toEqual({ value: 'Backend' });
+    });
+
     test('sends null to clear the focus area', async () => {
         mockRequestJira.mockResolvedValueOnce(makeRes(true, {}));
-        await call('updateEpicFocusArea', { epicKey: 'NH-1', fieldId: 'cf_10', optionId: null });
+        await call('updateEpicFocusArea', { epicKey: 'NH-1', fieldId: 'cf_10', optionId: null, value: null });
         const body = JSON.parse(mockRequestJira.mock.calls[0][1].body);
         expect(body.fields['cf_10']).toBeNull();
     });

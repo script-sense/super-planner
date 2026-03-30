@@ -234,6 +234,8 @@ resolver.define('getEpics', async (req) => {
         : null;
 
     return data.issues.map(issue => {
+        const focusAreaField = focusAreaFieldId ? issue.fields[focusAreaFieldId] : null;
+        const focusAreaValue = focusAreaFieldId ? (focusAreaField?.value ?? null) : null;
         // customfield_10020 is the sprint field — returned as an array.
         // Filter to only sprints from the selected board, then pick active or last.
         const allSprints = issue.fields.customfield_10020 ?? [];
@@ -241,9 +243,6 @@ resolver.define('getEpics', async (req) => {
             ? allSprints.filter(s => boardSprintIdSet.has(String(s.id)))
             : allSprints;
         const activeSprint = sprints.find(s => s.state === 'active') ?? sprints[sprints.length - 1] ?? null;
-        const focusArea = focusAreaFieldId
-            ? (issue.fields[focusAreaFieldId]?.value ?? null)
-            : null;
         return {
             key: issue.key,
             summary: issue.fields.summary,
@@ -253,7 +252,8 @@ resolver.define('getEpics', async (req) => {
                 : null,
             // sprintId is null when the epic has no sprint on this board → goes to backlog
             sprintId: activeSprint ? String(activeSprint.id) : null,
-            focusArea,
+            focusArea: focusAreaValue,
+            focusAreaId: focusAreaFieldId ? (focusAreaField?.id ?? null) : null,
             rank: issue.fields.customfield_10019 ?? null,
             project: issue.fields.project
                 ? { key: issue.fields.project.key, name: issue.fields.project.name, avatarUrl: issue.fields.project.avatarUrls?.['16x16'] ?? null }
@@ -269,7 +269,11 @@ resolver.define('getEpics', async (req) => {
 // Set (or clear) the Focus Area custom field on an epic.
 // Pass optionId = null to clear it. Using ID is more reliable than value name.
 resolver.define('updateEpicFocusArea', async (req) => {
-    const { epicKey, fieldId, optionId } = req.payload;
+    const { epicKey, fieldId, optionId, value } = req.payload;
+
+    const fieldValue = optionId
+        ? { id: optionId }
+        : (value ? { value } : null);
 
     const response = await api
         .asUser()
@@ -277,7 +281,7 @@ resolver.define('updateEpicFocusArea', async (req) => {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                fields: { [fieldId]: optionId ? { id: optionId } : null },
+                fields: { [fieldId]: fieldValue },
             }),
         });
 
