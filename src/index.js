@@ -3,6 +3,59 @@ import api, { route } from '@forge/api';
 
 const FOCUS_AREA_FIELD_NAME = 'Focus Area';
 
+// Fallback: derive the Focus Area field + options from issue data when the user
+// cannot access the field configuration APIs (common for non-admin users).
+async function discoverFocusAreaFromIssues(fieldIdHint = null) {
+    try {
+        const searchRes = await api.asUser().requestJira(route`/rest/api/3/search/jql`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                jql: 'issuetype = Epic ORDER BY created DESC',
+                fields: ['*all'],
+                expand: ['names'],
+                maxResults: 5,
+            }),
+        });
+        if (!searchRes.ok) return fieldIdHint ? { fieldId: fieldIdHint, contextId: null, options: [], readOnly: true } : null;
+
+        const searchData = await searchRes.json();
+        const names = searchData.names ?? {};
+        const fieldId = fieldIdHint
+            ?? Object.entries(names).find(([, name]) => name === FOCUS_AREA_FIELD_NAME)?.[0]
+            ?? null;
+        if (!fieldId) return null;
+
+        const base = { fieldId, contextId: null, options: [], readOnly: true };
+        const issues = searchData.issues ?? [];
+
+        for (const issue of issues) {
+            const issueId = issue.id ?? issue.key;
+            if (!issueId) continue;
+
+            const editRes = await api.asUser().requestJira(route`/rest/api/3/issue/${issueId}/editmeta`);
+            if (!editRes.ok) continue; // try next issue if editmeta is inaccessible
+
+            const editMeta = await editRes.json();
+            const allowedValues = editMeta.fields?.[fieldId]?.allowedValues;
+            if (!Array.isArray(allowedValues)) continue;
+
+            return {
+                ...base,
+                options: allowedValues.map(opt => ({
+                    id: opt.id ?? opt.value,
+                    value: opt.value ?? opt.name ?? String(opt.id),
+                })),
+            };
+        }
+
+        // Could not read options, but we still know the field exists.
+        return base;
+    } catch (err) {
+        return fieldIdHint ? { fieldId: fieldIdHint, contextId: null, options: [], readOnly: true } : null;
+    }
+}
+
 const resolver = new Resolver();
 
 // Fetch all boards the current user has access to.
@@ -69,20 +122,27 @@ resolver.define('getSprints', async (req) => {
 // Returns { fieldId, contextId, options: [{ id, value }] | null, readOnly } or null if not found.
 resolver.define('getFocusAreaField', async () => {
     const fieldsRes = await api.asUser().requestJira(route`/rest/api/3/field`);
-    if (fieldsRes.status === 403) return null; // user cannot access custom field config
+    if (fieldsRes.status === 403) return await discoverFocusAreaFromIssues(); // user cannot access custom field config
     if (!fieldsRes.ok) {
         const text = await fieldsRes.text();
         throw new Error(`Jira API error ${fieldsRes.status}: ${text}`);
     }
     const fields = await fieldsRes.json();
     const field = fields.find(f => f.name === FOCUS_AREA_FIELD_NAME && f.custom);
-    if (!field) return null;
+    if (!field) {
+        const fallback = await discoverFocusAreaFromIssues();
+        if (fallback) return fallback;
+        return null;
+    }
 
     const fieldId = field.id;
     const base = { fieldId, readOnly: false };
 
     const ctxRes = await api.asUser().requestJira(route`/rest/api/3/field/${fieldId}/context?maxResults=1`);
-    if (ctxRes.status === 403) return { ...base, contextId: null, options: null, readOnly: true }; // lacking permission to view context
+    if (ctxRes.status === 403) {
+        const fallback = await discoverFocusAreaFromIssues(fieldId);
+        return fallback ?? { ...base, contextId: null, options: null, readOnly: true }; // lacking permission to view context
+    }
     if (!ctxRes.ok) {
         const text = await ctxRes.text();
         throw new Error(`Jira API error ${ctxRes.status}: ${text}`);
@@ -94,7 +154,10 @@ resolver.define('getFocusAreaField', async () => {
     const contextId = context.id;
 
     const optRes = await api.asUser().requestJira(route`/rest/api/3/field/${fieldId}/context/${contextId}/option?maxResults=100`);
-    if (optRes.status === 403) return { ...base, contextId, options: null, readOnly: true }; // lacking permission to view options
+    if (optRes.status === 403) {
+        const fallback = await discoverFocusAreaFromIssues(fieldId);
+        return fallback ?? { ...base, contextId, options: null, readOnly: true }; // lacking permission to view options
+    }
     if (!optRes.ok) {
         const text = await optRes.text();
         throw new Error(`Jira API error ${optRes.status}: ${text}`);
