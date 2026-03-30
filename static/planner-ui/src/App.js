@@ -896,6 +896,7 @@ function PlanningGrid({ epics, sprints, selectedPriorities, focusAreaField, focu
     const [expandedEpic, setExpandedEpic] = useState(null);
     const [collapsedSprints, setCollapsedSprints] = useState(new Set());
     const [showHistory, setShowHistory] = useState(false);
+    const canEditFocusAreas = Array.isArray(focusAreaField?.options) && !focusAreaField?.readOnly;
 
     const pastSprints = sprints.filter(s => s.state === 'closed');
     const gridSprints = showHistory ? sprints : sprints.filter(s => s.state !== 'closed');
@@ -968,19 +969,19 @@ function PlanningGrid({ epics, sprints, selectedPriorities, focusAreaField, focu
         invoke('updateEpicPriority', { epicKey: activeId, priority: rowKey })
             .catch(err => console.error('Failed to update priority:', err));
 
-        if (focusAreaField) {
-            const epic = epics.find(e => e.key === activeId);
-            const currentKey = epic?.focusArea ?? UNASSIGNED_KEY;
-            if (sectionKey !== currentKey) {
-                const newFocusArea = sectionKey === UNASSIGNED_KEY ? null : sectionKey;
-                const option = focusAreaField.options.find(o => o.value === sectionKey);
-                onFocusAreaChange(activeId, newFocusArea);
-                invoke('updateEpicFocusArea', {
-                    epicKey: activeId,
-                    fieldId: focusAreaField.fieldId,
-                    optionId: option?.id ?? null,
-                }).catch(err => console.error('Failed to update focus area:', err));
-            }
+        const epic = epics.find(e => e.key === activeId);
+        const currentKey = epic?.focusArea ?? UNASSIGNED_KEY;
+        if (focusAreaField && canEditFocusAreas && sectionKey !== currentKey) {
+            const newFocusArea = sectionKey === UNASSIGNED_KEY ? null : sectionKey;
+            const option = focusAreaField.options.find(o => o.value === sectionKey);
+            onFocusAreaChange(activeId, newFocusArea);
+            invoke('updateEpicFocusArea', {
+                epicKey: activeId,
+                fieldId: focusAreaField.fieldId,
+                optionId: option?.id ?? null,
+            }).catch(err => console.error('Failed to update focus area:', err));
+        } else if (focusAreaField && !canEditFocusAreas && sectionKey !== currentKey) {
+            console.warn('Focus Areas are read-only for your permissions');
         }
     }
 
@@ -1690,6 +1691,10 @@ function App() {
     const focusAreaOptions = focusAreaField?.options?.length
         ? focusAreaField.options.map(o => o.value)
         : (epics ? [...new Set(epics.map(e => e.focusArea).filter(Boolean))].sort() : []);
+    const canManageFocusAreas = !!(focusAreaField
+        && !focusAreaField.readOnly
+        && Array.isArray(focusAreaField.options)
+        && focusAreaField.contextId);
 
     // Derive sorted project list from loaded epics — no extra resolver needed.
     const projects = epics
@@ -1796,7 +1801,20 @@ function App() {
 
                 {/* Right-side actions */}
                 <div style={{ flex: 1 }} />
-                {focusAreaField && (
+                {focusAreaField?.readOnly && (
+                    <span style={{
+                        fontSize: 12,
+                        color: '#6b778c',
+                        background: '#F4F5F7',
+                        border: '1px solid #DFE1E6',
+                        borderRadius: 4,
+                        padding: '4px 8px',
+                        whiteSpace: 'nowrap',
+                    }}>
+                        Focus Areas are read-only for your permissions
+                    </span>
+                )}
+                {canManageFocusAreas && (
                     <FocusAreaSettings
                         focusAreaField={focusAreaField}
                         epics={epics}

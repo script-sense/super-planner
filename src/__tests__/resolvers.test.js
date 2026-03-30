@@ -222,14 +222,14 @@ describe('getFocusAreaField', () => {
             .mockResolvedValueOnce(makeRes(true, [{ id: 'cf_10', name: 'Focus Area', custom: true }]))
             .mockResolvedValueOnce(makeRes(true, { values: [] })); // no context
         const result = await call('getFocusAreaField');
-        expect(result).toEqual({ fieldId: 'cf_10', contextId: null, options: [] });
+        expect(result).toEqual({ fieldId: 'cf_10', contextId: null, options: [], readOnly: false });
     });
 
     test('returns null when context fetch is forbidden', async () => {
         mockRequestJira
             .mockResolvedValueOnce(makeRes(true, [{ id: 'cf_10', name: 'Focus Area', custom: true }]))
             .mockResolvedValueOnce(makeRes(false, null, 'Forbidden', 403));
-        expect(await call('getFocusAreaField')).toBeNull();
+        expect(await call('getFocusAreaField')).toEqual({ fieldId: 'cf_10', contextId: null, options: null, readOnly: true });
     });
 
     test('returns field, context and options', async () => {
@@ -247,6 +247,7 @@ describe('getFocusAreaField', () => {
             fieldId: 'cf_10',
             contextId: 'ctx_5',
             options: [{ id: 'opt_1', value: 'Backend' }, { id: 'opt_2', value: 'Frontend' }],
+            readOnly: false,
         });
     });
 
@@ -255,7 +256,7 @@ describe('getFocusAreaField', () => {
             .mockResolvedValueOnce(makeRes(true, [{ id: 'cf_10', name: 'Focus Area', custom: true }]))
             .mockResolvedValueOnce(makeRes(true, { values: [{ id: 'ctx_5' }] }))
             .mockResolvedValueOnce(makeRes(false, null, 'Forbidden', 403));
-        expect(await call('getFocusAreaField')).toBeNull();
+        expect(await call('getFocusAreaField')).toEqual({ fieldId: 'cf_10', contextId: 'ctx_5', options: null, readOnly: true });
     });
 
     test('throws on fields API error', async () => {
