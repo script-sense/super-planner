@@ -54,7 +54,7 @@ async function discoverFocusAreaFromIssues(fieldIdHint = null) {
             if (!Array.isArray(allowedValues)) continue;
 
             allowedValues.forEach(addOptionFromFieldValue);
-            return { ...base, options: Array.from(optionMap.values()) };
+            if (optionMap.size > 0) return { ...base, options: Array.from(optionMap.values()) };
         }
 
         // Could not read options from editmeta, but we still know the field exists.
@@ -179,7 +179,15 @@ resolver.define('getFocusAreaField', async () => {
     const optData = await optRes.json();
     const rawOptions = optData.values ?? [];
     const ordered = rawOptions.some(o => o?.position != null)
-        ? [...rawOptions].sort((a, b) => (a?.position ?? 0) - (b?.position ?? 0))
+        ? [...rawOptions]
+            .map((o, idx) => ({ ...o, __idx: idx }))
+            .sort((a, b) => {
+                const pa = a?.position ?? Number.MAX_SAFE_INTEGER;
+                const pb = b?.position ?? Number.MAX_SAFE_INTEGER;
+                if (pa !== pb) return pa - pb;
+                return a.__idx - b.__idx;
+            })
+            .map(({ __idx, ...rest }) => rest)
         : rawOptions;
     return { ...base, contextId, options: ordered.map(o => ({ id: o.id, value: o.value })) };
 });

@@ -1736,7 +1736,7 @@ function App() {
     const focusAreaOptions = (Array.isArray(focusAreaField?.options) && focusAreaField.options.length > 0)
         ? focusAreaField.options.map(o => o.value)
         : epicFocusAreas;
-    const showFocusAreaSettings = Array.isArray(focusAreaField?.options);
+    const showFocusAreaSettings = Array.isArray(focusAreaField?.options) && focusAreaField.options.length > 0;
 
     // Derive sorted project list from loaded epics — no extra resolver needed.
     const projects = epics
