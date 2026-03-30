@@ -6,53 +6,83 @@ const FOCUS_AREA_FIELD_NAME = 'Focus Area';
 // Fallback: derive the Focus Area field + options from issue data when the user
 // cannot access the field configuration APIs (common for non-admin users).
 async function discoverFocusAreaFromIssues(fieldIdHint = null) {
+    const base = (fieldId) => ({ fieldId, contextId: null, options: [], readOnly: true });
+    const normalizeOption = (opt) => ({
+        id: opt.id ?? opt.value ?? opt.name ?? String(opt.id ?? opt.value),
+        value: opt.value ?? opt.name ?? String(opt.id ?? opt.value),
+        position: opt.position ?? opt.order ?? null,
+    });
+
     try {
-        const searchRes = await api.asUser().requestJira(route`/rest/api/3/search/jql`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
+        let fieldId = fieldIdHint;
+        let nextPageToken = undefined;
+        let page = 0;
+        const collected = new Map(); // preserve discovery order from issues
+
+        do {
+            const body = {
                 jql: 'issuetype = Epic ORDER BY created DESC',
                 fields: ['*all'],
                 expand: ['names'],
-                maxResults: 5,
-            }),
-        });
-        if (!searchRes.ok) return fieldIdHint ? { fieldId: fieldIdHint, contextId: null, options: [], readOnly: true } : null;
-
-        const searchData = await searchRes.json();
-        const names = searchData.names ?? {};
-        const fieldId = fieldIdHint
-            ?? Object.entries(names).find(([, name]) => name === FOCUS_AREA_FIELD_NAME)?.[0]
-            ?? null;
-        if (!fieldId) return null;
-
-        const base = { fieldId, contextId: null, options: [], readOnly: true };
-        const issues = searchData.issues ?? [];
-
-        for (const issue of issues) {
-            const issueId = issue.id ?? issue.key;
-            if (!issueId) continue;
-
-            const editRes = await api.asUser().requestJira(route`/rest/api/3/issue/${issueId}/editmeta`);
-            if (!editRes.ok) continue; // try next issue if editmeta is inaccessible
-
-            const editMeta = await editRes.json();
-            const allowedValues = editMeta.fields?.[fieldId]?.allowedValues;
-            if (!Array.isArray(allowedValues)) continue;
-
-            return {
-                ...base,
-                options: allowedValues.map(opt => ({
-                    id: opt.id ?? opt.value,
-                    value: opt.value ?? opt.name ?? String(opt.id),
-                })),
+                maxResults: 50,
             };
+            if (nextPageToken) body.nextPageToken = nextPageToken;
+
+            const searchRes = await api.asUser().requestJira(route`/rest/api/3/search/jql`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            if (!searchRes.ok) return fieldId ? base(fieldId) : null;
+
+            const searchData = await searchRes.json();
+            const names = searchData.names ?? {};
+            fieldId = fieldId
+                ?? Object.entries(names).find(([, name]) => name === FOCUS_AREA_FIELD_NAME)?.[0]
+                ?? null;
+            if (!fieldId) return null;
+
+            const issues = searchData.issues ?? [];
+
+            // Collect actual Focus Area values from issues as a last-resort option list.
+            for (const issue of issues) {
+                const value = issue.fields?.[fieldId];
+                if (!value) continue;
+                const normalized = normalizeOption(value);
+                if (!collected.has(normalized.value)) collected.set(normalized.value, normalized);
+            }
+
+            // Try to read allowedValues from any editable issue in this page.
+            for (const issue of issues) {
+                const issueId = issue.id ?? issue.key;
+                if (!issueId) continue;
+
+                const editRes = await api.asUser().requestJira(route`/rest/api/3/issue/${issueId}/editmeta`);
+                if (!editRes.ok) continue; // try next issue if editmeta is inaccessible
+
+                const editMeta = await editRes.json();
+                const allowedValues = editMeta.fields?.[fieldId]?.allowedValues;
+                if (!Array.isArray(allowedValues) || allowedValues.length === 0) continue;
+
+                const options = allowedValues
+                    .map(normalizeOption)
+                    .sort((a, b) => (a.position ?? Number.MAX_SAFE_INTEGER) - (b.position ?? Number.MAX_SAFE_INTEGER))
+                    .map(({ position, ...rest }) => rest);
+
+                return { ...base(fieldId), options };
+            }
+
+            nextPageToken = searchData.nextPageToken ?? null;
+            page += 1;
+        } while (nextPageToken && page < 3);
+
+        if (collected.size > 0) {
+            return { ...base(fieldId), options: [...collected.values()].map(({ position, ...rest }) => rest) };
         }
 
-        // Could not read options, but we still know the field exists.
-        return base;
+        return base(fieldId);
     } catch (err) {
-        return fieldIdHint ? { fieldId: fieldIdHint, contextId: null, options: [], readOnly: true } : null;
+        return fieldIdHint ? base(fieldIdHint) : null;
     }
 }
 
@@ -141,7 +171,7 @@ resolver.define('getFocusAreaField', async () => {
     const ctxRes = await api.asUser().requestJira(route`/rest/api/3/field/${fieldId}/context?maxResults=1`);
     if (ctxRes.status === 403) {
         const fallback = await discoverFocusAreaFromIssues(fieldId);
-        return fallback ?? { ...base, contextId: null, options: null, readOnly: true }; // lacking permission to view context
+        return fallback ?? { ...base, contextId: null, options: [], readOnly: true }; // lacking permission to view context
     }
     if (!ctxRes.ok) {
         const text = await ctxRes.text();
@@ -156,14 +186,18 @@ resolver.define('getFocusAreaField', async () => {
     const optRes = await api.asUser().requestJira(route`/rest/api/3/field/${fieldId}/context/${contextId}/option?maxResults=100`);
     if (optRes.status === 403) {
         const fallback = await discoverFocusAreaFromIssues(fieldId);
-        return fallback ?? { ...base, contextId, options: null, readOnly: true }; // lacking permission to view options
+        return fallback ?? { ...base, contextId, options: [], readOnly: true }; // lacking permission to view options
     }
     if (!optRes.ok) {
         const text = await optRes.text();
         throw new Error(`Jira API error ${optRes.status}: ${text}`);
     }
     const optData = await optRes.json();
-    return { ...base, contextId, options: (optData.values ?? []).map(o => ({ id: o.id, value: o.value })) };
+    const options = (optData.values ?? [])
+        .slice()
+        .sort((a, b) => (a.position ?? Number.MAX_SAFE_INTEGER) - (b.position ?? Number.MAX_SAFE_INTEGER))
+        .map(o => ({ id: o.id, value: o.value }));
+    return { ...base, contextId, options };
 });
 
 // Add a new option to the Focus Area field context.
