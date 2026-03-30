@@ -66,7 +66,7 @@ resolver.define('getSprints', async (req) => {
 });
 
 // Discover the Focus Area custom field by name, then fetch its context and all options.
-// Returns { fieldId, contextId, options: [{ id, value }] } or null if not found.
+// Returns { fieldId, contextId, options: [{ id, value }] | null, readOnly } or null if not found.
 resolver.define('getFocusAreaField', async () => {
     const fieldsRes = await api.asUser().requestJira(route`/rest/api/3/field`);
     if (fieldsRes.status === 403) return null; // user cannot access custom field config
@@ -79,31 +79,28 @@ resolver.define('getFocusAreaField', async () => {
     if (!field) return null;
 
     const fieldId = field.id;
+    const base = { fieldId, readOnly: false };
 
     const ctxRes = await api.asUser().requestJira(route`/rest/api/3/field/${fieldId}/context?maxResults=1`);
-    if (ctxRes.status === 403) return null; // lacking permission to view context
+    if (ctxRes.status === 403) return { ...base, contextId: null, options: null, readOnly: true }; // lacking permission to view context
     if (!ctxRes.ok) {
         const text = await ctxRes.text();
         throw new Error(`Jira API error ${ctxRes.status}: ${text}`);
     }
     const ctxData = await ctxRes.json();
     const context = ctxData.values?.[0];
-    if (!context) return { fieldId, contextId: null, options: [] };
+    if (!context) return { ...base, contextId: null, options: [], readOnly: false };
 
     const contextId = context.id;
 
     const optRes = await api.asUser().requestJira(route`/rest/api/3/field/${fieldId}/context/${contextId}/option?maxResults=100`);
-    if (optRes.status === 403) return null; // lacking permission to view options
+    if (optRes.status === 403) return { ...base, contextId, options: null, readOnly: true }; // lacking permission to view options
     if (!optRes.ok) {
         const text = await optRes.text();
         throw new Error(`Jira API error ${optRes.status}: ${text}`);
     }
     const optData = await optRes.json();
-    return {
-        fieldId,
-        contextId,
-        options: (optData.values ?? []).map(o => ({ id: o.id, value: o.value })),
-    };
+    return { ...base, contextId, options: (optData.values ?? []).map(o => ({ id: o.id, value: o.value })) };
 });
 
 // Add a new option to the Focus Area field context.
