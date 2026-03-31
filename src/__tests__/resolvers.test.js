@@ -244,6 +244,7 @@ describe('getFocusAreaField', () => {
         mockRequestJira
             .mockResolvedValueOnce(makeRes(true, [{ id: 'cf_10', name: 'Focus Area', custom: true }]))
             .mockResolvedValueOnce(makeRes(false, null, 'Forbidden', 403))
+            .mockResolvedValueOnce(makeRes(true, { projects: [] }))
             .mockResolvedValueOnce(makeRes(true, {
                 names: { cf_10: 'Focus Area' },
                 issues: [{ id: '2001' }],
@@ -263,6 +264,7 @@ describe('getFocusAreaField', () => {
         mockRequestJira
             .mockResolvedValueOnce(makeRes(true, [{ id: 'cf_10', name: 'Focus Area', custom: true }]))
             .mockResolvedValueOnce(makeRes(false, null, 'Forbidden', 403))
+            .mockResolvedValueOnce(makeRes(true, { projects: [] }))
             .mockResolvedValueOnce(makeRes(true, {
                 names: { cf_10: 'Focus Area' },
                 issues: [{ id: '1001', key: 'NH-1', fields: { cf_10: { id: 'opt_1', value: 'Backend' } } }],
@@ -272,6 +274,40 @@ describe('getFocusAreaField', () => {
             fieldId: 'cf_10',
             contextId: null,
             options: [{ id: 'opt_1', value: 'Backend' }],
+            readOnly: true,
+        });
+    });
+
+    test('uses createmeta options (preserving order) when context is forbidden', async () => {
+        mockRequestJira
+            .mockResolvedValueOnce(makeRes(true, [{ id: 'cf_10', name: 'Focus Area', custom: true }]))
+            .mockResolvedValueOnce(makeRes(false, null, 'Forbidden', 403))
+            .mockResolvedValueOnce(makeRes(true, {
+                projects: [{
+                    issuetypes: [{
+                        fields: {
+                            cf_10: {
+                                allowedValues: [
+                                    { id: '10090', value: 'Reliability' },
+                                    { id: '10091', value: 'Onboarding' },
+                                    { id: '10024', value: 'Business' },
+                                    { id: '10023', value: 'Engineering' },
+                                ],
+                            },
+                        },
+                    }],
+                }],
+            }));
+        const result = await call('getFocusAreaField');
+        expect(result).toEqual({
+            fieldId: 'cf_10',
+            contextId: null,
+            options: [
+                { id: '10090', value: 'Reliability' },
+                { id: '10091', value: 'Onboarding' },
+                { id: '10024', value: 'Business' },
+                { id: '10023', value: 'Engineering' },
+            ],
             readOnly: true,
         });
     });
@@ -386,6 +422,7 @@ describe('getFocusAreaField', () => {
             .mockResolvedValueOnce(makeRes(true, [{ id: 'cf_10', name: 'Focus Area', custom: true }]))
             .mockResolvedValueOnce(makeRes(true, { values: [{ id: 'ctx_5' }] }))
             .mockResolvedValueOnce(makeRes(false, null, 'Forbidden', 403))
+            .mockResolvedValueOnce(makeRes(true, { projects: [] }))
             .mockResolvedValueOnce(makeRes(true, {
                 names: { cf_10: 'Focus Area' },
                 issues: [{ id: '3001' }],
