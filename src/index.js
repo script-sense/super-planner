@@ -3,15 +3,45 @@ import api, { route } from '@forge/api';
 
 const FOCUS_AREA_FIELD_NAME = 'Focus Area';
 
+const normalizeOption = (opt, index = null) => ({
+    id: opt.id ?? opt.value ?? opt.name ?? String(opt.id ?? opt.value ?? index),
+    value: opt.value ?? opt.name ?? String(opt.id ?? opt.value ?? index),
+    position: opt.position ?? opt.order ?? index ?? null, // preserve API order when position is absent
+});
+
+// Try to read Focus Area options from createmeta — available to non-admin users and
+// preserves the configured option ordering.
+async function discoverFocusAreaFromCreateMeta(fieldId) {
+    try {
+        const res = await api.asUser().requestJira(
+            route`/rest/api/3/issue/createmeta?expand=projects.issuetypes.fields&issuetypeNames=Epic`
+        );
+        if (!res.ok) return null;
+        const data = await res.json();
+        for (const project of data.projects ?? []) {
+            for (const issueType of project.issuetypes ?? []) {
+                const field = issueType.fields?.[fieldId];
+                const allowedValues = field?.allowedValues;
+                if (Array.isArray(allowedValues) && allowedValues.length > 0) {
+                    const options = allowedValues
+                        .map((opt, idx) => normalizeOption(opt, idx))
+                        .sort((a, b) => (a.position ?? Number.MAX_SAFE_INTEGER) - (b.position ?? Number.MAX_SAFE_INTEGER))
+                        .map(({ position, ...rest }) => rest);
+                    // createmeta does not expose context IDs; keep null to mark read-only.
+                    return { contextId: null, options };
+                }
+            }
+        }
+        return null;
+    } catch (err) {
+        return null;
+    }
+}
+
 // Fallback: derive the Focus Area field + options from issue data when the user
 // cannot access the field configuration APIs (common for non-admin users).
 async function discoverFocusAreaFromIssues(fieldIdHint = null) {
     const base = (fieldId) => ({ fieldId, contextId: null, options: [], readOnly: true });
-    const normalizeOption = (opt, index = null) => ({
-        id: opt.id ?? opt.value ?? opt.name ?? String(opt.id ?? opt.value),
-        value: opt.value ?? opt.name ?? String(opt.id ?? opt.value),
-        position: opt.position ?? opt.order ?? index ?? null, // preserve API order when position is absent
-    });
 
     try {
         let fieldId = fieldIdHint;
@@ -171,6 +201,8 @@ resolver.define('getFocusAreaField', async () => {
 
     const ctxRes = await api.asUser().requestJira(route`/rest/api/3/field/${fieldId}/context?maxResults=1`);
     if (ctxRes.status === 403) {
+        const createmeta = await discoverFocusAreaFromCreateMeta(fieldId);
+        if (createmeta) return { ...base, ...createmeta, readOnly: true };
         const fallback = await discoverFocusAreaFromIssues(fieldId);
         return fallback ?? { ...base, contextId: null, options: [], readOnly: true }; // lacking permission to view context
     }
@@ -186,6 +218,8 @@ resolver.define('getFocusAreaField', async () => {
 
     const optRes = await api.asUser().requestJira(route`/rest/api/3/field/${fieldId}/context/${contextId}/option?maxResults=100`);
     if (optRes.status === 403) {
+        const createmeta = await discoverFocusAreaFromCreateMeta(fieldId);
+        if (createmeta) return { ...base, contextId, options: createmeta.options, readOnly: true };
         const fallback = await discoverFocusAreaFromIssues(fieldId);
         return fallback ?? { ...base, contextId, options: [], readOnly: true }; // lacking permission to view options
     }
@@ -194,10 +228,16 @@ resolver.define('getFocusAreaField', async () => {
         throw new Error(`Jira API error ${optRes.status}: ${text}`);
     }
     const optData = await optRes.json();
-    const options = (optData.values ?? [])
+    let options = (optData.values ?? [])
         .slice()
         .sort((a, b) => (a.position ?? Number.MAX_SAFE_INTEGER) - (b.position ?? Number.MAX_SAFE_INTEGER))
         .map(o => ({ id: o.id, value: o.value }));
+    if (options.length === 0) {
+        const createmeta = await discoverFocusAreaFromCreateMeta(fieldId);
+        if (createmeta?.options?.length) {
+            return { ...base, contextId, options: createmeta.options, readOnly: true };
+        }
+    }
     return { ...base, contextId, options };
 });
 
