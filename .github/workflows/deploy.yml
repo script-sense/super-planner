@@ -1,6 +1,7 @@
 name: Deploy to Production
 
 on:
+  workflow_dispatch: 
   push:
     branches:
       - main
@@ -12,7 +13,6 @@ on:
       - 'static/planner-ui/package.json'
       - 'static/planner-ui/package-lock.json'
       - 'manifest.yml'
-
 jobs:
   test-and-build:
     runs-on: ubuntu-latest
