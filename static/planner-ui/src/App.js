@@ -60,7 +60,8 @@ async function fetchChildIssues(epicKey) {
     const data = await res.json();
     return (data.issues ?? []).map(issue => {
         const sprintList = issue.fields.customfield_10020 ?? [];
-        const sprint = sprintList.find(s => s.state === 'active') ?? pickLatestSprint(sprintList);
+        const currentSprints = sprintList.filter(s => s.state !== 'closed');
+        const sprint = currentSprints.find(s => s.state === 'active') ?? pickLatestSprint(currentSprints);
         return {
             key: issue.key,
             summary: issue.fields.summary,
