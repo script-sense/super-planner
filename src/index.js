@@ -9,6 +9,23 @@ const normalizeOption = (opt, index = null) => ({
     position: opt.position ?? opt.order ?? index ?? null, // preserve API order when position is absent
 });
 
+const sprintRecency = (s) => {
+    const dateCandidates = [s.startDate, s.endDate, s.completeDate]
+        .map(d => (d ? Date.parse(d) : NaN))
+        .filter(Number.isFinite);
+    if (dateCandidates.length > 0) return Math.max(...dateCandidates);
+    const idNum = Number(s.id);
+    return Number.isFinite(idNum) ? idNum : Number.NEGATIVE_INFINITY;
+};
+
+const pickLatestSprint = (sprints) =>
+    (sprints ?? []).reduce((latest, sprint) => {
+        if (!latest) return sprint;
+        const sprintTime = sprintRecency(sprint);
+        const latestTime = sprintRecency(latest);
+        return sprintTime >= latestTime ? sprint : latest;
+    }, null);
+
 // Try to read Focus Area options from createmeta — available to non-admin users and
 // preserves the configured option ordering.
 async function discoverFocusAreaFromCreateMeta(fieldId) {
@@ -375,12 +392,15 @@ resolver.define('getEpics', async (req) => {
         const focusAreaField = focusAreaFieldId ? issue.fields[focusAreaFieldId] : null;
         const focusAreaValue = focusAreaFieldId ? (focusAreaField?.value ?? null) : null;
         // customfield_10020 is the sprint field — returned as an array.
-        // Filter to only sprints from the selected board, then pick active or last.
+        // Filter to only sprints from the selected board, then pick the active sprint
+        // or the most recent closed sprint.
         const allSprints = issue.fields.customfield_10020 ?? [];
         const sprints = boardSprintIdSet
             ? allSprints.filter(s => boardSprintIdSet.has(String(s.id)))
             : allSprints;
-        const activeSprint = sprints.find(s => s.state === 'active') ?? sprints[sprints.length - 1] ?? null;
+        const activeSprint = sprints.find(s => s.state === 'active') ?? null;
+        const latestSprint = pickLatestSprint(sprints);
+        const chosenSprint = activeSprint ?? latestSprint ?? null;
         return {
             key: issue.key,
             summary: issue.fields.summary,
@@ -389,7 +409,7 @@ resolver.define('getEpics', async (req) => {
                 ? { displayName: issue.fields.assignee.displayName, avatarUrl: issue.fields.assignee.avatarUrls?.['24x24'] ?? null }
                 : null,
             // sprintId is null when the epic has no sprint on this board → goes to backlog
-            sprintId: activeSprint ? String(activeSprint.id) : null,
+            sprintId: chosenSprint ? String(chosenSprint.id) : null,
             focusArea: focusAreaValue,
             focusAreaId: focusAreaFieldId ? (focusAreaField?.id ?? null) : null,
             rank: issue.fields.customfield_10019 ?? null,

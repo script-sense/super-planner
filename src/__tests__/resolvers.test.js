@@ -585,6 +585,18 @@ describe('getEpics', () => {
         expect(epic.sprintId).toBe('20');
     });
 
+    test('selects the most recent sprint when multiple closed sprints exist', async () => {
+        const issue = makeIssue('NH-1', {
+            sprints: [
+                { id: 20, state: 'closed', name: 'Newer Sprint', startDate: '2026-03-01', endDate: '2026-03-14' },
+                { id: 10, state: 'closed', name: 'Older Sprint', startDate: '2026-02-01', endDate: '2026-02-14' },
+            ],
+        });
+        mockRequestJira.mockResolvedValueOnce(makeRes(true, { issues: [issue] }));
+        const [epic] = await call('getEpics', { filterId: '10001', focusAreaFieldId: null, boardSprintIds: [10, 20] });
+        expect(epic.sprintId).toBe('20');
+    });
+
     test('includes focusArea when focusAreaFieldId is provided', async () => {
         const issue = makeIssue('NH-1', { extraFields: { 'customfield_fa': { id: 'opt-1', value: 'Backend' } } });
         mockRequestJira.mockResolvedValueOnce(makeRes(true, { issues: [issue] }));

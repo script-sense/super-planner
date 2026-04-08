@@ -29,6 +29,23 @@ import { CSS as DNDCSS } from '@dnd-kit/utilities';
 
 // --- Jira fetch ---
 
+const sprintRecency = (sprint) => {
+    const dateCandidates = [sprint.startDate, sprint.endDate, sprint.completeDate]
+        .map(d => (d ? Date.parse(d) : NaN))
+        .filter(Number.isFinite);
+    if (dateCandidates.length > 0) return Math.max(...dateCandidates);
+    const idNum = Number(sprint.id);
+    return Number.isFinite(idNum) ? idNum : Number.NEGATIVE_INFINITY;
+};
+
+const pickLatestSprint = (sprints) =>
+    (sprints ?? []).reduce((latest, sprint) => {
+        if (!latest) return sprint;
+        const sprintTime = sprintRecency(sprint);
+        const latestTime = sprintRecency(latest);
+        return sprintTime >= latestTime ? sprint : latest;
+    }, null);
+
 async function fetchChildIssues(epicKey) {
     const res = await requestJira('/rest/api/3/search/jql', {
         method: 'POST',
@@ -43,7 +60,7 @@ async function fetchChildIssues(epicKey) {
     const data = await res.json();
     return (data.issues ?? []).map(issue => {
         const sprintList = issue.fields.customfield_10020 ?? [];
-        const sprint = sprintList.find(s => s.state === 'active') ?? sprintList[sprintList.length - 1] ?? null;
+        const sprint = sprintList.find(s => s.state === 'active') ?? pickLatestSprint(sprintList);
         return {
             key: issue.key,
             summary: issue.fields.summary,
