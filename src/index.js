@@ -393,14 +393,16 @@ resolver.define('getEpics', async (req) => {
         const focusAreaValue = focusAreaFieldId ? (focusAreaField?.value ?? null) : null;
         // customfield_10020 is the sprint field — returned as an array.
         // Filter to only sprints from the selected board, then pick the active sprint
-        // or the most recent closed sprint.
+        // or latest future sprint. Ignore closed sprints so backlog items don't inherit
+        // a historical sprint.
         const allSprints = issue.fields.customfield_10020 ?? [];
         const sprints = boardSprintIdSet
             ? allSprints.filter(s => boardSprintIdSet.has(String(s.id)))
             : allSprints;
-        const activeSprint = sprints.find(s => s.state === 'active') ?? null;
-        const latestSprint = pickLatestSprint(sprints);
-        const chosenSprint = activeSprint ?? latestSprint ?? null;
+        const currentSprints = sprints.filter(s => s.state !== 'closed');
+        const activeSprint = currentSprints.find(s => s.state === 'active') ?? null;
+        const latestCurrent = pickLatestSprint(currentSprints);
+        const chosenSprint = activeSprint ?? latestCurrent ?? null;
         return {
             key: issue.key,
             summary: issue.fields.summary,
