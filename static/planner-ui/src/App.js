@@ -312,6 +312,8 @@ function EpicDetailModal({ epic, sprints, onClose, onEpicDone }) {
     const [transitions, setTransitions] = useState(null); // null = loading, [{id,name,categoryKey}]
     const [epicStatus, setEpicStatus] = useState(epic.status ?? null); // { name, categoryKey }
     const [statusOpen, setStatusOpen] = useState(false);
+    const [statusBtnRect, setStatusBtnRect] = useState(null);
+    const statusBtnRef = useRef(null);
     const [childStatusOpen, setChildStatusOpen] = useState(null); // issueKey of open popover
     const [childTransitions, setChildTransitions] = useState({}); // { [issueKey]: [{id,name,categoryKey}] }
     // { key: issueKey, field: 'sprint' | 'assignee' } — which chip is being edited
@@ -625,7 +627,14 @@ function EpicDetailModal({ epic, sprints, onClose, onEpicDone }) {
                             return (
                                 <div style={{ position: 'relative' }}>
                                     <button
-                                        onClick={() => !transitioning && setStatusOpen(o => !o)}
+                                        ref={statusBtnRef}
+                                        onClick={() => {
+                                            if (transitioning) return;
+                                            if (!statusOpen && statusBtnRef.current) {
+                                                setStatusBtnRect(statusBtnRef.current.getBoundingClientRect());
+                                            }
+                                            setStatusOpen(o => !o);
+                                        }}
                                         disabled={transitioning}
                                         title="Change status"
                                         style={{
@@ -643,16 +652,20 @@ function EpicDetailModal({ epic, sprints, onClose, onEpicDone }) {
                                         {transitioning ? 'Updating…' : (epicStatus?.name ?? 'Unknown')}
                                         {!transitioning && <span style={{ fontSize: 9, marginLeft: 2, opacity: 0.7 }}>▼</span>}
                                     </button>
-                                    {statusOpen && transitions.length > 0 && (
+                                    {statusOpen && transitions.length > 0 && statusBtnRect && (
                                         <>
                                             {/* click-away backdrop */}
                                             <div onClick={() => setStatusOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 299 }} />
                                             <div style={{
-                                                position: 'absolute', top: 'calc(100% + 4px)', right: 0,
+                                                position: 'fixed',
+                                                top: statusBtnRect.bottom + 4,
+                                                right: Math.max(8, window.innerWidth - statusBtnRect.right),
                                                 background: '#fff', borderRadius: 4,
                                                 boxShadow: '0 4px 16px rgba(9,30,66,0.2)',
-                                                minWidth: 180, zIndex: 300,
-                                                overflow: 'hidden',
+                                                minWidth: 180,
+                                                maxHeight: `calc(100vh - ${statusBtnRect.bottom + 16}px)`,
+                                                overflowY: 'auto',
+                                                zIndex: 300,
                                                 border: '1px solid #DFE1E6',
                                             }}>
                                                 {[...transitions].sort((a, b) => {
