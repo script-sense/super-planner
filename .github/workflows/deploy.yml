@@ -24,7 +24,14 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          # Pinned to 22.6.0 — the last version confirmed to work reliably with
+          # the Forge CLI's OpenAPI fetch step. Newer Node 22.x / 24.x versions
+          # have a regression in their HTTP stack that causes node-fetch (used
+          # by `forge lint`/`forge deploy`) to intermittently fail with
+          # "Premature close" when fetching developer.atlassian.com OpenAPI
+          # specs. See:
+          # https://community.developer.atlassian.com/t/forge-lint-deploy-issue-with-node-js-22/101420
+          node-version: '22.6.0'
           cache: 'npm'
           cache-dependency-path: |
             package-lock.json
@@ -59,7 +66,9 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          # See note in test-and-build job above — pinned to last Node version
+          # known to work reliably with the Forge CLI's OpenAPI fetch step.
+          node-version: '22.6.0'
           cache: 'npm'
           cache-dependency-path: |
             package-lock.json
@@ -82,7 +91,23 @@ jobs:
       - name: Deploy to production
         run: |
           forge settings set usage-analytics false
-          forge deploy -e production --non-interactive
+          # `forge deploy` runs `forge lint`, which fetches Atlassian's OpenAPI specs
+          # from developer.atlassian.com. That endpoint intermittently returns
+          # "Premature close" / connection reset errors which fail the whole deploy.
+          # Retry the deploy a few times to ride out these transient network blips.
+          attempt=1
+          max_attempts=5
+          until forge deploy -e production --non-interactive; do
+            status=$?
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              echo "forge deploy failed after $attempt attempts (exit $status)"
+              exit "$status"
+            fi
+            sleep_for=$((attempt * 15))
+            echo "forge deploy attempt $attempt failed (exit $status); retrying in ${sleep_for}s..."
+            sleep "$sleep_for"
+            attempt=$((attempt + 1))
+          done
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
