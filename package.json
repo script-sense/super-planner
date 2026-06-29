@@ -5,6 +5,7 @@
   "link": "https://developer.atlassian.com/platform/forge/manifest-reference/modules/jira-full-page/",
   "version": "1.2.1",
   "main": "index.js",
+  "type": "module",
   "license": "MIT",
   "private": true,
   "scripts": {

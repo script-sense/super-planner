@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { invoke, requestJira, view, router } from '@forge/bridge';
 import {
     ROWS, VALID_PRIORITY_KEYS, BACKLOG_COLUMN, UNASSIGNED_KEY, MS_PER_DAY,
@@ -652,7 +653,7 @@ function EpicDetailModal({ epic, sprints, onClose, onEpicDone }) {
                                         {transitioning ? 'Updating…' : (epicStatus?.name ?? 'Unknown')}
                                         {!transitioning && <span style={{ fontSize: 9, marginLeft: 2, opacity: 0.7 }}>▼</span>}
                                     </button>
-                                    {statusOpen && transitions.length > 0 && statusBtnRect && (
+                                    {statusOpen && transitions.length > 0 && statusBtnRect && createPortal(
                                         <>
                                             {/* click-away backdrop */}
                                             <div onClick={() => setStatusOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 299 }} />
@@ -701,7 +702,8 @@ function EpicDetailModal({ epic, sprints, onClose, onEpicDone }) {
                                                     );
                                                 })}
                                             </div>
-                                        </>
+                                        </>,
+                                        document.body
                                     )}
                                 </div>
                             );
