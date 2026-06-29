@@ -316,6 +316,7 @@ function EpicDetailModal({ epic, sprints, onClose, onEpicDone }) {
     const [statusBtnRect, setStatusBtnRect] = useState(null);
     const statusBtnRef = useRef(null);
     const [childStatusOpen, setChildStatusOpen] = useState(null); // issueKey of open popover
+    const [childStatusBtnRect, setChildStatusBtnRect] = useState(null);
     const [childTransitions, setChildTransitions] = useState({}); // { [issueKey]: [{id,name,categoryKey}] }
     // { key: issueKey, field: 'sprint' | 'assignee' } — which chip is being edited
     const [editing, setEditing] = useState(null);
@@ -374,8 +375,9 @@ function EpicDetailModal({ epic, sprints, onClose, onEpicDone }) {
             .catch(err => console.error('[SuperPlanner] Assignee update failed:', err));
     }
 
-    function openChildStatus(issueKey) {
+    function openChildStatus(issueKey, btnEl) {
         setChildStatusOpen(issueKey);
+        if (btnEl) setChildStatusBtnRect(btnEl.getBoundingClientRect());
         if (!childTransitions[issueKey]) {
             invoke('getTransitions', { epicKey: issueKey })
                 .then(trans => setChildTransitions(prev => ({ ...prev, [issueKey]: (trans ?? []).sort((a, b) => {
@@ -465,7 +467,7 @@ function EpicDetailModal({ epic, sprints, onClose, onEpicDone }) {
                                 return (
                                     <div style={{ position: 'relative', display: 'inline-block' }}>
                                         <button
-                                            onClick={() => isOpen ? setChildStatusOpen(null) : openChildStatus(issue.key)}
+                                            onClick={e => isOpen ? setChildStatusOpen(null) : openChildStatus(issue.key, e.currentTarget)}
                                             style={{
                                                 display: 'inline-flex', alignItems: 'center', gap: 4,
                                                 padding: '2px 7px', borderRadius: 3, border: 'none',
@@ -477,15 +479,19 @@ function EpicDetailModal({ epic, sprints, onClose, onEpicDone }) {
                                             {issue.statusName}
                                             <span style={{ fontSize: 8, opacity: 0.7 }}>▼</span>
                                         </button>
-                                        {isOpen && (
+                                        {isOpen && childStatusBtnRect && createPortal(
                                             <>
                                                 <div onClick={() => setChildStatusOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 299 }} />
                                                 <div style={{
-                                                    position: 'absolute', top: 'calc(100% + 4px)', left: 0,
+                                                    position: 'fixed',
+                                                    top: childStatusBtnRect.bottom + 4,
+                                                    left: childStatusBtnRect.left,
                                                     background: '#fff', borderRadius: 4,
                                                     boxShadow: '0 4px 16px rgba(9,30,66,0.2)',
-                                                    minWidth: 160, zIndex: 300,
-                                                    overflow: 'hidden', border: '1px solid #DFE1E6',
+                                                    minWidth: 160,
+                                                    maxHeight: `calc(100vh - ${childStatusBtnRect.bottom + 16}px)`,
+                                                    overflowY: 'auto',
+                                                    zIndex: 300, border: '1px solid #DFE1E6',
                                                 }}>
                                                     {!trans
                                                         ? <div style={{ padding: '8px 12px', fontSize: 12, color: '#6B778C' }}>Loading…</div>
@@ -510,7 +516,8 @@ function EpicDetailModal({ epic, sprints, onClose, onEpicDone }) {
                                                         })
                                                     }
                                                 </div>
-                                            </>
+                                            </>,
+                                            document.body
                                         )}
                                     </div>
                                 );

@@ -82,7 +82,23 @@ jobs:
       - name: Deploy to production
         run: |
           forge settings set usage-analytics false
-          forge deploy -e production --non-interactive
+          # `forge deploy` runs `forge lint`, which fetches Atlassian's OpenAPI specs
+          # from developer.atlassian.com. That endpoint intermittently returns
+          # "Premature close" / connection reset errors which fail the whole deploy.
+          # Retry the deploy a few times to ride out these transient network blips.
+          attempt=1
+          max_attempts=5
+          until forge deploy -e production --non-interactive; do
+            status=$?
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              echo "forge deploy failed after $attempt attempts (exit $status)"
+              exit "$status"
+            fi
+            sleep_for=$((attempt * 15))
+            echo "forge deploy attempt $attempt failed (exit $status); retrying in ${sleep_for}s..."
+            sleep "$sleep_for"
+            attempt=$((attempt + 1))
+          done
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
