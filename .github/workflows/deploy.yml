@@ -86,7 +86,17 @@ jobs:
         run: npm run build
 
       - name: Install Forge CLI
-        run: npm install -g @forge/cli
+        # Pinned to 12.22.0 — the last release of the 12.x line, and the last
+        # version confirmed to package and deploy this app successfully.
+        # @forge/cli 13.0.0 (released 2026-06-22) ships a new packager that
+        # fails this app's deploy at the "Packaging app files" step with
+        # `Error: Cannot use import statement outside a module`, even though
+        # `forge lint` passes and the source is unchanged. Until that
+        # regression is understood/resolved, pin to the known-good 12.x line.
+        # Bonus: 12.22.0 loads `get-folder-size` (ESM-only) via dynamic
+        # `await import()` rather than `require()`, so we no longer need the
+        # `--experimental-require-module` Node flag workaround either.
+        run: npm install -g @forge/cli@12.22.0
 
       - name: Deploy to production
         run: |
@@ -111,10 +121,3 @@ jobs:
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-          # The Forge CLI's `@forge/cli-shared` does `require('get-folder-size')`,
-          # but `get-folder-size` v5+ is pure ESM, which crashes packaging with:
-          #   Error: require() of ES Module ... not supported.
-          # Node 22.6.0 (pinned above for the "Premature close" workaround) supports
-          # require()-ing ESM only behind this experimental flag — it became
-          # default in 22.12.0. Enabling the flag here keeps the 22.6.0 pin viable.
-          NODE_OPTIONS: --experimental-require-module
