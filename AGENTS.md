@@ -164,6 +164,13 @@ forge logs -e production --since 15m
 - Don't use `storage` from `@forge/api` without adding `storage:app` scope to manifest
 - Don't use `asApp()` for Jira API calls — use `asUser()` so user permissions are enforced
 - Don't add UI Kit components or import from `@forge/react`
+- **Don't add `"type": "module"` to the root `package.json`.** It was added in
+  b5598c7 as a speculative CI fix and took production down: with it, Forge's
+  webpack parses `src/index.js` as strict ESM, where the CJS `@forge/resolver`
+  default import resolves to the whole `module.exports` object instead of the
+  class, so `new Resolver()` fails at invoke time with
+  `_forge_resolver__WEBPACK_IMPORTED_MODULE_0__ is not a constructor`. Nothing
+  needs the field — `babel-jest` transpiles the ESM syntax in tests either way.
 
 ---
 
