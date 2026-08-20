@@ -11,7 +11,7 @@
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
-    "@forge/bridge": "5.14.1",
+    "@forge/bridge": "5.17.0",
     "react": "^16",
     "react-dom": "^16"
   },
@@ -38,5 +38,15 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "overrides": {
+    "underscore": "^1.13.8",
+    "@tootallnate/once": "^2.0.1",
+    "nth-check": "^2.1.1",
+    "postcss": "^8.5.26",
+    "serialize-javascript": "^7.0.5",
+    "linkify-it": "^5.0.2",
+    "svgo": "^2.8.3",
+    "uuid": "^11.1.1"
   }
 }

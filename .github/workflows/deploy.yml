@@ -13,6 +13,19 @@ on:
       - 'static/planner-ui/package.json'
       - 'static/planner-ui/package-lock.json'
       - 'manifest.yml'
+
+env:
+  # Keep every job on one Node version. 22.6.0 was pinned here previously to
+  # dodge a "Premature close" flake in `forge lint`, but it predates stable
+  # `require(esm)` (Node 22.12) and default ESM syntax detection (Node 22.7),
+  # and the Forge CLI now loads ESM-only dependencies (e.g. get-folder-size@5)
+  # through require(). On 22.6.0 that surfaces as
+  # "Error: Cannot use import statement outside a module" during `forge lint`.
+  # The network flake is handled by the retry loop in the deploy step instead.
+  NODE_VERSION: '22.22.1'
+  # Pinned so a new Forge CLI release can't break a deploy without a commit.
+  FORGE_CLI_VERSION: '13.4.0'
+
 jobs:
   test-and-build:
     runs-on: ubuntu-latest
@@ -24,14 +37,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          # Pinned to 22.6.0 — the last version confirmed to work reliably with
-          # the Forge CLI's OpenAPI fetch step. Newer Node 22.x / 24.x versions
-          # have a regression in their HTTP stack that causes node-fetch (used
-          # by `forge lint`/`forge deploy`) to intermittently fail with
-          # "Premature close" when fetching developer.atlassian.com OpenAPI
-          # specs. See:
-          # https://community.developer.atlassian.com/t/forge-lint-deploy-issue-with-node-js-22/101420
-          node-version: '22.6.0'
+          node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
           cache-dependency-path: |
             package-lock.json
@@ -66,9 +72,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          # See note in test-and-build job above — pinned to last Node version
-          # known to work reliably with the Forge CLI's OpenAPI fetch step.
-          node-version: '22.6.0'
+          node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
           cache-dependency-path: |
             package-lock.json
@@ -86,35 +90,48 @@ jobs:
         run: npm run build
 
       - name: Install Forge CLI
-        run: npm install -g @forge/cli
+        run: npm install -g @forge/cli@${{ env.FORGE_CLI_VERSION }}
 
       - name: Deploy to production
         run: |
           forge settings set usage-analytics false
-          # `forge deploy` runs `forge lint`, which fetches Atlassian's OpenAPI specs
-          # from developer.atlassian.com. That endpoint intermittently returns
-          # "Premature close" / connection reset errors which fail the whole deploy.
-          # Retry the deploy a few times to ride out these transient network blips.
+
+          # `forge deploy` runs `forge lint`, which fetches Atlassian's OpenAPI
+          # specs from developer.atlassian.com. That endpoint intermittently
+          # fails with "Premature close" / connection resets, which kills the
+          # whole deploy. Retry those, but fail fast on anything else so a real
+          # error (lint violation, manifest problem, bad credentials) surfaces
+          # immediately instead of being repeated five times.
           attempt=1
           max_attempts=5
-          until forge deploy -e production --non-interactive; do
+          transient='premature close|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang up|network socket disconnected|fetch failed|502 Bad Gateway|503 Service|504 Gateway'
+
+          while true; do
+            set +e
+            output=$(forge deploy -e production --non-interactive 2>&1)
             status=$?
+            set -e
+            printf '%s\n' "$output"
+
+            if [ "$status" -eq 0 ]; then
+              break
+            fi
+
+            if ! printf '%s\n' "$output" | grep -Eqi "$transient"; then
+              echo "forge deploy failed with a non-transient error (exit $status); not retrying."
+              exit "$status"
+            fi
+
             if [ "$attempt" -ge "$max_attempts" ]; then
               echo "forge deploy failed after $attempt attempts (exit $status)"
               exit "$status"
             fi
+
             sleep_for=$((attempt * 15))
-            echo "forge deploy attempt $attempt failed (exit $status); retrying in ${sleep_for}s..."
+            echo "forge deploy attempt $attempt hit a transient network error (exit $status); retrying in ${sleep_for}s..."
             sleep "$sleep_for"
             attempt=$((attempt + 1))
           done
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-          # The Forge CLI's `@forge/cli-shared` does `require('get-folder-size')`,
-          # but `get-folder-size` v5+ is pure ESM, which crashes packaging with:
-          #   Error: require() of ES Module ... not supported.
-          # Node 22.6.0 (pinned above for the "Premature close" workaround) supports
-          # require()-ing ESM only behind this experimental flag — it became
-          # default in 22.12.0. Enabling the flag here keeps the 22.6.0 pin viable.
-          NODE_OPTIONS: --experimental-require-module

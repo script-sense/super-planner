@@ -164,3 +164,25 @@ forge logs -e production --since 15m
 - Don't use `storage` from `@forge/api` without adding `storage:app` scope to manifest
 - Don't use `asApp()` for Jira API calls — use `asUser()` so user permissions are enforced
 - Don't add UI Kit components or import from `@forge/react`
+
+---
+
+## Dependency security overrides
+
+`static/planner-ui/package.json` has an `overrides` block that force-upgrades
+transitive dependencies of `react-scripts@5.0.1` (CRA is EOL, so its pinned
+sub-dependencies never get patched upstream). Keep it — removing it
+reintroduces ~50 Dependabot alerts.
+
+Two notes for future work:
+
+- **`svgo: ^2.8.3`** — `@svgr/plugin-svgo@5.5.0` declares `svgo@^1.2.2`, and
+  svgo 2.x is a breaking API change. This is safe *only because the project has
+  no `.svg` imports*, so the `@svgr` loader never runs. If you add an SVG
+  import and the build fails inside `@svgr`/`svgo`, that override is why.
+- **`webpack-dev-server` is deliberately NOT overridden.** Its remaining 2
+  moderate advisories need v5, but react-scripts 5.0.1 passes the v4-only
+  `onBeforeSetupMiddleware`/`onAfterSetupMiddleware` options, so forcing v5
+  breaks `npm start` with "Invalid options object". These advisories affect the
+  local dev server only — never the deployed app, which is a static build.
+  The real fix is migrating off CRA (e.g. to Vite).
