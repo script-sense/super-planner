@@ -14,6 +14,12 @@ on:
       - 'static/planner-ui/package-lock.json'
       - 'manifest.yml'
 
+# Read-only: nothing here writes to the repo. Forge auth comes from the
+# FORGE_* secrets, not GITHUB_TOKEN. Declared explicitly so the default
+# token scope can never widen it.
+permissions:
+  contents: read
+
 env:
   # Keep every job on one Node version. 22.6.0 was pinned here previously to
   # dodge a "Premature close" flake in `forge lint`, but it predates stable

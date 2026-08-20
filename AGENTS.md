@@ -187,9 +187,18 @@ Two notes for future work:
   svgo 2.x is a breaking API change. This is safe *only because the project has
   no `.svg` imports*, so the `@svgr` loader never runs. If you add an SVG
   import and the build fails inside `@svgr`/`svgo`, that override is why.
-- **`webpack-dev-server` is deliberately NOT overridden.** Its remaining 2
-  moderate advisories need v5, but react-scripts 5.0.1 passes the v4-only
-  `onBeforeSetupMiddleware`/`onAfterSetupMiddleware` options, so forcing v5
-  breaks `npm start` with "Invalid options object". These advisories affect the
-  local dev server only — never the deployed app, which is a static build.
-  The real fix is migrating off CRA (e.g. to Vite).
+- **`webpack-dev-server: ^5.2.6`** clears the six moderate dev-server
+  advisories (source-code theft, cross-origin exposure, HMR WebSocket
+  interception, CSRF, malformed-`Host` DoS — all fixed in 5.2.6; 4.x got no
+  backport). react-scripts@5.0.1 builds a v4 options object, and v5 removed
+  `https`, `onBeforeSetupMiddleware` and `onAfterSetupMiddleware` while
+  validating with `additionalProperties: false`, so `npm start` runs
+  `scripts/start.js` — a shim that translates the config to the v5 shape
+  (`server`, `setupMiddlewares`) and then delegates to CRA's own start script.
+  It also restores two things CRA still expects from v4: `Server#close()`
+  (removed in favour of `stopCallback`, used by the Ctrl-C handler) and the
+  `server._stats` field the error overlay's source-map middleware reads
+  (renamed to `server.stats`). `npm run build` and `npm test` are untouched —
+  they never load the dev server. If a react-scripts/wds upgrade ever makes the
+  shim redundant, point `start` back at `react-scripts start` and delete it.
+  The long-term fix is still migrating off CRA (e.g. to Vite).

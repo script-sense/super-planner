@@ -3,6 +3,11 @@ name: CI
 on:
   pull_request:
 
+# Read-only: this job only checks out the repo and runs tests. Declared
+# explicitly so the default token scope can never widen it.
+permissions:
+  contents: read
+
 jobs:
   test-and-build:
     runs-on: ubuntu-latest
