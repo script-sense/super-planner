@@ -6,6 +6,7 @@ import {
     startOfDay, computeCalendarDays, sprintDaySpan,
     computeMonthGroups, computeQuarterGroups,
     getPriorityRow, buildGridData, findMatchingFilter,
+    computePopoverStyle,
 } from './utils';
 import {
     DndContext,
@@ -317,6 +318,7 @@ function EpicDetailModal({ epic, sprints, onClose, onEpicDone }) {
     const statusBtnRef = useRef(null);
     const [childStatusOpen, setChildStatusOpen] = useState(null); // issueKey of open popover
     const [childStatusBtnRect, setChildStatusBtnRect] = useState(null);
+    const childStatusBtnRef = useRef(null);
     const [childTransitions, setChildTransitions] = useState({}); // { [issueKey]: [{id,name,categoryKey}] }
     // { key: issueKey, field: 'sprint' | 'assignee' } — which chip is being edited
     const [editing, setEditing] = useState(null);
@@ -341,6 +343,26 @@ function EpicDetailModal({ epic, sprints, onClose, onEpicDone }) {
         document.addEventListener('keydown', onKey);
         return () => document.removeEventListener('keydown', onKey);
     }, [onClose]);
+
+    // Popovers are fixed-position portals anchored to a chip that can move under
+    // them (child list scroll, iframe resize). Re-measure while one is open.
+    useEffect(() => {
+        if (!statusOpen && childStatusOpen === null) return undefined;
+        function sync() {
+            if (statusOpen && statusBtnRef.current) {
+                setStatusBtnRect(statusBtnRef.current.getBoundingClientRect());
+            }
+            if (childStatusOpen !== null && childStatusBtnRef.current) {
+                setChildStatusBtnRect(childStatusBtnRef.current.getBoundingClientRect());
+            }
+        }
+        window.addEventListener('resize', sync);
+        window.addEventListener('scroll', sync, true); // capture: the child list is the scroller
+        return () => {
+            window.removeEventListener('resize', sync);
+            window.removeEventListener('scroll', sync, true);
+        };
+    }, [statusOpen, childStatusOpen]);
 
     const total = children?.length ?? 0;
     const doneCount = children?.filter(c => c.statusCategory === 'Done').length ?? 0;
@@ -377,6 +399,7 @@ function EpicDetailModal({ epic, sprints, onClose, onEpicDone }) {
 
     function openChildStatus(issueKey, btnEl) {
         setChildStatusOpen(issueKey);
+        childStatusBtnRef.current = btnEl ?? null;
         if (btnEl) setChildStatusBtnRect(btnEl.getBoundingClientRect());
         if (!childTransitions[issueKey]) {
             invoke('getTransitions', { epicKey: issueKey })
@@ -483,14 +506,15 @@ function EpicDetailModal({ epic, sprints, onClose, onEpicDone }) {
                                             <>
                                                 <div onClick={() => setChildStatusOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 299 }} />
                                                 <div style={{
-                                                    position: 'fixed',
-                                                    top: childStatusBtnRect.bottom + 4,
-                                                    left: childStatusBtnRect.left,
+                                                    ...computePopoverStyle(childStatusBtnRect, {
+                                                        align: 'left',
+                                                        viewportWidth: window.innerWidth,
+                                                        viewportHeight: window.innerHeight,
+                                                        minWidth: 160,
+                                                    }),
                                                     background: '#fff', borderRadius: 4,
                                                     boxShadow: '0 4px 16px rgba(9,30,66,0.2)',
                                                     minWidth: 160,
-                                                    maxHeight: `calc(100vh - ${childStatusBtnRect.bottom + 16}px)`,
-                                                    overflowY: 'auto',
                                                     zIndex: 300, border: '1px solid #DFE1E6',
                                                 }}>
                                                     {!trans
@@ -665,14 +689,15 @@ function EpicDetailModal({ epic, sprints, onClose, onEpicDone }) {
                                             {/* click-away backdrop */}
                                             <div onClick={() => setStatusOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 299 }} />
                                             <div style={{
-                                                position: 'fixed',
-                                                top: statusBtnRect.bottom + 4,
-                                                right: Math.max(8, window.innerWidth - statusBtnRect.right),
+                                                ...computePopoverStyle(statusBtnRect, {
+                                                    align: 'right',
+                                                    viewportWidth: window.innerWidth,
+                                                    viewportHeight: window.innerHeight,
+                                                    minWidth: 180,
+                                                }),
                                                 background: '#fff', borderRadius: 4,
                                                 boxShadow: '0 4px 16px rgba(9,30,66,0.2)',
                                                 minWidth: 180,
-                                                maxHeight: `calc(100vh - ${statusBtnRect.bottom + 16}px)`,
-                                                overflowY: 'auto',
                                                 zIndex: 300,
                                                 border: '1px solid #DFE1E6',
                                             }}>

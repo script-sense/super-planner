@@ -9,12 +9,17 @@ services:
       - ~/.ssh:/root/.ssh:ro
       # Mount gitconfig
       - ~/.gitconfig:/root/.gitconfig:ro
+      # Persist claude credentials, settings and history across container rebuilds
+      - claude-config:/root/.claude
       # Mount working folder
       - ../:/home/workspace
     environment:
+      CLAUDE_CONFIG_DIR: /root/.claude
       FORGE_EMAIL: ${FORGE_EMAIL}
       FORGE_API_TOKEN: ${FORGE_API_TOKEN}
     # The following commands ensure that the container stays active
     entrypoint: bash
     stdin_open: true
     tty: true
+volumes:
+  claude-config:

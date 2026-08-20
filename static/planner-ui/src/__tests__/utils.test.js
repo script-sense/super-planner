@@ -8,6 +8,8 @@ import {
     getPriorityRow,
     buildGridData,
     findMatchingFilter,
+    computePopoverStyle,
+    POPOVER_MAX_HEIGHT, POPOVER_MIN_HEIGHT, POPOVER_GAP, POPOVER_MARGIN,
 } from '../utils';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -342,5 +344,62 @@ describe('findMatchingFilter', () => {
     test('returns null when filters is null/undefined', () => {
         expect(findMatchingFilter(null, { projectKey: 'NH' })).toBeNull();
         expect(findMatchingFilter(undefined, { projectKey: 'NH' })).toBeNull();
+    });
+});
+
+// ── computePopoverStyle ───────────────────────────────────────────────────────
+
+describe('computePopoverStyle', () => {
+    const VIEWPORT = { viewportWidth: 1000, viewportHeight: 600 };
+    // A status chip near the top of the epic modal, like the one in the modal header.
+    const topAnchor = { top: 60, bottom: 84, left: 700, right: 820 };
+
+    it('opens below the anchor when there is room', () => {
+        const style = computePopoverStyle(topAnchor, VIEWPORT);
+        expect(style.position).toBe('fixed');
+        expect(style.top).toBe(topAnchor.bottom + POPOVER_GAP);
+    });
+
+    it('caps the height so a long transition list scrolls instead of running off screen', () => {
+        const style = computePopoverStyle(topAnchor, { ...VIEWPORT, viewportHeight: 2000 });
+        expect(style.maxHeight).toBe(POPOVER_MAX_HEIGHT);
+        expect(style.overflowY).toBe('auto');
+    });
+
+    it('shrinks to the room available below the anchor', () => {
+        // 300px viewport leaves 300 - 84 - gap - margin = 204px below the chip.
+        const style = computePopoverStyle(topAnchor, { ...VIEWPORT, viewportHeight: 300 });
+        expect(style.maxHeight).toBe(204);
+        expect(style.top + style.maxHeight).toBeLessThanOrEqual(300 - POPOVER_MARGIN);
+    });
+
+    it('flips above the anchor when the chip sits near the bottom', () => {
+        const bottomAnchor = { top: 540, bottom: 564, left: 100, right: 220 };
+        const style = computePopoverStyle(bottomAnchor, VIEWPORT);
+        expect(style.top).toBeLessThan(bottomAnchor.top);
+        expect(style.top + style.maxHeight).toBeLessThanOrEqual(bottomAnchor.top);
+    });
+
+    it('never renders a useless sliver, and never overflows the bottom edge', () => {
+        // Only 20px below the chip — too little to flip into, too little to show.
+        const squeezed = { top: 550, bottom: 580, left: 100, right: 220 };
+        const style = computePopoverStyle(squeezed, { ...VIEWPORT, viewportHeight: 600 });
+        expect(style.maxHeight).toBeGreaterThanOrEqual(POPOVER_MIN_HEIGHT);
+        expect(style.top + style.maxHeight).toBeLessThanOrEqual(600);
+    });
+
+    it('right-aligns to the anchor when asked', () => {
+        const style = computePopoverStyle(topAnchor, { ...VIEWPORT, align: 'right' });
+        expect(style.right).toBe(1000 - topAnchor.right);
+        expect(style.left).toBeUndefined();
+    });
+
+    it('keeps a left-aligned popover inside both edges', () => {
+        const nearRightEdge = { top: 60, bottom: 84, left: 960, right: 990 };
+        const style = computePopoverStyle(nearRightEdge, { ...VIEWPORT, minWidth: 160 });
+        expect(style.left + 160).toBeLessThanOrEqual(1000 - POPOVER_MARGIN);
+
+        const offLeft = { top: 60, bottom: 84, left: -40, right: 60 };
+        expect(computePopoverStyle(offLeft, VIEWPORT).left).toBe(POPOVER_MARGIN);
     });
 });

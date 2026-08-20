@@ -10,7 +10,8 @@
         "esbenp.prettier-vscode",
         "eamodio.gitlens",
         "dbaeumer.vscode-eslint",
-        "bradlc.vscode-tailwindcss"
+        "bradlc.vscode-tailwindcss",
+        "anthropic.claude-code"
       ]
     }
   }

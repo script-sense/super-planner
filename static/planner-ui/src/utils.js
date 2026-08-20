@@ -159,3 +159,51 @@ export function findMatchingFilter(filters, board) {
     const match = filters.find(f => f.jql.toLowerCase().includes(key));
     return match ? match.id : filters[0].id;
 }
+
+// ── Popover positioning ───────────────────────────────────────────────────────
+// Status popovers are portaled to <body> and positioned with `position: fixed` so
+// they escape the epic modal's `overflow: hidden`. Nothing clips them any more —
+// which also means nothing stops a long transition list from running off the
+// bottom of the Forge iframe. So the popover has to fit itself: cap the height so
+// the list always scrolls internally, flip above the anchor when there is more
+// room up there, and keep it inside the viewport on both axes.
+
+export const POPOVER_MAX_HEIGHT = 320;  // never taller than this, however much room there is
+export const POPOVER_MIN_HEIGHT = 120;  // below this a popover is too short to be useful
+export const POPOVER_GAP = 4;           // space between anchor and popover
+export const POPOVER_MARGIN = 8;        // space kept clear at the viewport edges
+
+export function computePopoverStyle(rect, opts = {}) {
+    const {
+        align = 'left',
+        viewportWidth = 0,
+        viewportHeight = 0,
+        maxHeight = POPOVER_MAX_HEIGHT,
+        minWidth = 160,
+    } = opts;
+
+    const spaceBelow = viewportHeight - rect.bottom - POPOVER_GAP - POPOVER_MARGIN;
+    const spaceAbove = rect.top - POPOVER_GAP - POPOVER_MARGIN;
+    const flipUp = spaceBelow < POPOVER_MIN_HEIGHT && spaceAbove > spaceBelow;
+    const room = Math.max(flipUp ? spaceAbove : spaceBelow, 0);
+    const height = Math.max(POPOVER_MIN_HEIGHT, Math.min(maxHeight, room));
+
+    const style = { position: 'fixed', maxHeight: height, overflowY: 'auto' };
+
+    if (flipUp) {
+        style.top = Math.max(POPOVER_MARGIN, rect.top - POPOVER_GAP - height);
+    } else {
+        // Clamp so the popover's bottom edge stays inside the viewport even when
+        // the anchor itself sits near the bottom.
+        const lowestTop = Math.max(POPOVER_MARGIN, viewportHeight - POPOVER_MARGIN - height);
+        style.top = Math.min(rect.bottom + POPOVER_GAP, lowestTop);
+    }
+
+    if (align === 'right') {
+        style.right = Math.max(POPOVER_MARGIN, viewportWidth - rect.right);
+    } else {
+        style.left = Math.max(POPOVER_MARGIN, Math.min(rect.left, viewportWidth - minWidth - POPOVER_MARGIN));
+    }
+
+    return style;
+}
