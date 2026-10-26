@@ -1737,7 +1737,19 @@ function App() {
 
     // On mount: load reference data and restore board + filter + project from query params.
     useEffect(() => {
-        Promise.all([invoke('getBoards'), invoke('getFilters'), invoke('getFocusAreaField'), getParamsFromLocation()])
+        // Name each call. A failed resolver rejects with the platform's generic
+        // "An unexpected error occurred", and Promise.all collapses all four into
+        // one message, so without this the page can't say what actually broke.
+        const named = (name, promise) => promise.catch(err => {
+            console.error(`[SuperPlanner] ${name} failed:`, err);
+            throw new Error(`${name}: ${err.message ?? 'failed'}`);
+        });
+        Promise.all([
+            named('getBoards', invoke('getBoards')),
+            named('getFilters', invoke('getFilters')),
+            named('getFocusAreaField', invoke('getFocusAreaField')),
+            named('getParamsFromLocation', getParamsFromLocation()),
+        ])
             .then(([boardData, filterData, focusField, { boardId: paramBoardId, filterId: paramFilterId, projectKey: paramProjectKey }]) => {
                 setBoards(boardData);
                 setFilters(filterData);
