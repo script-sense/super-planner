@@ -128,7 +128,9 @@ forge deploy -e production --non-interactive
 ```
 
 ### When to run `forge install --upgrade`
-Only needed when scopes or permissions in `manifest.yml` change. Run manually:
+Needed when scopes, permissions, modules, or `app.compatibility` in
+`manifest.yml` change — `forge deploy` alone ships the new code but leaves the
+installation on the old grant. Run manually:
 ```bash
 forge install --upgrade --non-interactive --site scriptsense.atlassian.net --product jira --environment production
 ```
@@ -164,6 +166,17 @@ forge logs -e production --since 15m
 - Don't use `storage` from `@forge/api` without adding `storage:app` scope to manifest
 - Don't use `asApp()` for Jira API calls — use `asUser()` so user permissions are enforced
 - Don't add UI Kit components or import from `@forge/react`
+- **Don't go back to `jira:fullPage`.** Atlassian removed `jira:fullPage` and
+  `confluence:fullPage` from the platform on 21 October 2026; deploys fail
+  server-side with "Found unsupported modules in the manifest" even though the
+  CLI lints them fine (the module is still in the local manifest schema). The
+  replacement is `global:fullPage`, which takes the same `key`/`resource`/
+  `resolver`/`title`/`routePrefix` properties. Because a global module is not
+  tied to a product, `app.compatibility.jira.required: true` carries over the
+  old Jira-only behaviour — Jira must be present and licensing is inherited
+  from it. At most one product may be `required: true`. Legacy URLs forward to
+  the new `/apps/full-page/{installation-id}/super-planner` path until
+  18 December 2026.
 - **Don't add `"type": "module"` to the root `package.json`.** It was added in
   b5598c7 as a speculative CI fix and took production down: with it, Forge's
   webpack parses `src/index.js` as strict ESM, where the CJS `@forge/resolver`

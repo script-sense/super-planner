@@ -1,5 +1,5 @@
 modules:
-  jira:fullPage:
+  global:fullPage:
     - key: super-planner-full-page
       resource: main
       resolver:
@@ -13,6 +13,9 @@ resources:
   - key: main
     path: static/planner-ui/build
 app:
+  compatibility:
+    jira:
+      required: true
   runtime:
     name: nodejs24.x
     memoryMB: 256
